@@ -204,6 +204,18 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 
 结论：不会自动破坏现有网络；只有你主动点「保存」才会改 LAN 的 IP/DHCP 参数。
 
+### 一个踩过的坑：defconfig 里靠后的行会覆盖靠前的
+
+`be72-fwx.config` 是「上游 defconfig + 叠加层」拼接而成。同一个符号出现两次时，
+**后出现的那行生效**，所以叠加层里写 `CONFIG_PACKAGE_x=y`、而文件更靠下还留着
+`# CONFIG_PACKAGE_x is not set`，结果就是**被静默关掉**——`make defconfig` 不报错，
+只在收尾的 `require_cfg` 里表现为「这个符号不存在」。
+
+补 `-network` / `-system` 时就是这么栽的：`=y` 加在第 1131 行，旧的
+`# ... is not set` 在第 1147 行，后者赢。现在的处理是：真冲突的那几个
+（`wireless` / `firewall` / `fastnat`）保留 `is not set`，`network` / `system`
+一律不再写 `is not set`。改完做过一次全文件扫描，`=y` 与 `is not set` 的交集为 0。
+
 ## 四、构建失败时的降级开关
 
 `fwx.ko` 要打一个改动 `struct nf_conn` 的内核补丁，6.6 上存在失败可能。仓库已做两层兜底：

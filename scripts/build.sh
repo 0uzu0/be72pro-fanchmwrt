@@ -182,15 +182,23 @@ make defconfig >/dev/null
 # 上一版只 warn 就继续，等于把缺功能的固件当成功产物发出去——改为直接失败。
 # 注意：LuCI 的语言/翻译包是 tristate，一旦被选成 m 就等于「只编译不装」，
 # 而主题的 +@LUCI_LANG_zh_Hans 会把主题也拖成 m —— 所以这里只认 y。
+# 读一个符号的真实状态：y / m / n / MISSING（Kconfig 里根本没这个符号）
+cfg_state() {
+	if grep -qx "$1=y" .config; then echo y
+	elif grep -qx "$1=m" .config; then echo m
+	elif grep -qx "# $1 is not set" .config; then echo "n（被 Kconfig 关掉）"
+	else echo "MISSING（Kconfig 里没有这个符号）"; fi
+}
+
 require_cfg() {
 	local missing=()
 	local sym val
 	for sym in "$@"; do
-		val=$(sed -n "s/^${sym}=\(.*\)$/\1/p" .config | head -1)
-		[ "$val" = "y" ] || missing+=("$sym（实际：${val:-.config 里没有这一项}）")
+		val=$(cfg_state "$sym")
+		[ "$val" = "y" ] || missing+=("$sym  [$val]")
 	done
 	if [ ${#missing[@]} -gt 0 ]; then
-		echo "!! 以下符号未被 make defconfig 选成 y（依赖不满足或只选了 m）："
+		echo "!! 以下符号未被 make defconfig 选成 y："
 		printf '     %s\n' "${missing[@]}"
 		echo "   排查：看该包 Makefile 的 DEPENDS；=m 表示只编译不装进镜像，需要显式 =y。"
 		exit 1
@@ -231,6 +239,20 @@ REQUIRED_SYMS=(
 if [ "$WITH_KMOD" = "1" ]; then
 	REQUIRED_SYMS+=(CONFIG_PACKAGE_kmod-fwx)
 fi
+# 诊断：把 fwx 相关符号的真实状态与 Kconfig 依赖段落写进日志。
+# 这一步是为了「符号被静默丢弃」时能直接看到原因，不必再猜。
+log "5b/8 配置诊断"
+{
+	echo "--- .config 中 luci-app-fwx / 依赖 的符号状态 ---"
+	grep -E "^(# )?CONFIG_(PACKAGE_luci-app-fwx|PACKAGE_luci-lib-jsonc|PACKAGE_luci-compat|LUCI_LANG_zh_Hans)" .config \
+		| sed 's/^/    /' || true
+	echo "--- tmp/.config-package.in 里 luci-app-fwx-network 的依赖 ---"
+	awk '/^config PACKAGE_luci-app-fwx-network$/{f=1} f&&/^(config|menu)/&&!/luci-app-fwx-network/{f=0} f' tmp/.config-package.in 2>/dev/null | head -14 | sed 's/^/    /' || true
+	echo "--- tmp/.config-package.in 里 luci-lib-jsonc 是否存在 ---"
+	grep -c "^config PACKAGE_luci-lib-jsonc$" tmp/.config-package.in 2>/dev/null | sed 's/^/    count=/' || true
+} > "$WORKDIR/config-diag.log" 2>&1
+tail -30 "$WORKDIR/config-diag.log" | sed 's/^/  /'
+
 require_cfg "${REQUIRED_SYMS[@]}"
 
 # ---------------------------------------------------------------- 6. 内核
