@@ -128,69 +128,81 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 
 ---
 
-## 三之三、UI 样式：全站统一
+## 三之三、UI 样式：按官网截图逐项校准
 
-目标是把「fanchmwrt 自有页面」和「锐捷保留的页面」拉成同一套视觉。做法分三层：
+依据来自两处硬证据，不再凭印象配色：
 
-| 层 | 做法 | 默认 |
-|---|---|---|
-| **A. fwx 页面跟随主题变量** | fwx 的 `common.css` 里是硬编码色值（`#2885e8` 蓝按钮、`green` 描边、`#ff4444` 删除键、白底卡片），不跟主题、深色模式下突兀。构建时追加 override 换成主题变量（`--primary-color-high` / `--error-color-high` / `--border-color-low` …，均带兜底），14 个页面立刻跟随换色与深浅色 | **开** |
-| **B. 标准页按 fwx 骨架重写** | 卡片（1px/8px/16）、标题 18px、字段行 `mb10+gap10`、标签宽 140、checkbox 画成 40×20 滑块、表格边框与表头、主按钮实心、操作条右下对齐 | **开**（`STYLE_CARDS=0` 关） |
-| **C. 重写锐捷页面** | 不需要 | — |
+1. **官网真实截图** `fanchmwrt.com/images/web/fcm/*.png`（9 张，含仪表板 / 应用过滤 /
+   LAN 设置 / 终端列表 / 终端记录 / 特征库）。像素实测：卡片 `780x544`、输入框
+   `357x30`、开关 `37x19`（含抗锯齿即 40x20）、保存键 `#10b981`、编辑键 `#007bff`、
+   删除键 `#ff4444`、开关选中 `#2196F3`、描边 `#e5e7eb`、卡片与页面**同底色**。
+2. **上游样式表** `luci-app-fwx-resources/.../common.css`：`.fwx-form-card`
+   （`max-width 780 / padding 16 / 1px #e5e7eb / radius 8 / **transparent**`）、
+   `.form-row`（`flex / mb10 / gap10`）、`.form-label`（140）、`.switch`（40x20，
+   未选 `#ccc`、选中 `#2196F3`）、`.btn`（`#10b981`）、`.btn-edit`（`#007bff`）、
+   `.btn-delete`（`#ff4444`）。
 
-### B 层具体改了什么，以及刻意没改什么
+### 两个开关
 
-改（都是为了让标准页和 fwx 页面一致）：
-
-参照物是 fwx 的真实页面骨架（`luci-app-fwx-appfilter/.../advance.htm`）：
-
-```
-<div class="fwx-form-card">
-  <div class="form-title">…</div>
-  <div class="form-desc">…</div>
-  <div class="form-row"><label class="form-label">…</label><控件/></div>
-  <div class="form-row">按钮组（右对齐）</div>
-</div>
-```
-
-映射到 LuCI 后逐项对齐：
-
-| 元素 | fwx 骨架 | 主题原样 | 统一后 |
+| 开关 | 作用 | 默认 | 为什么 |
 |---|---|---|---|
-| 区块 | `.fwx-form-card` | `fieldset` 只有 margin/padding | 1px 描边 + 8 圆角 + 16 内距白卡 |
+| `STYLE_FWX` | fwx 自有页面改用主题变量 | **0（关）** | 官网 UI 就是那套硬编码色值，换成主题变量反而**偏离 1:1**；且深色模式下官方卡片是 `transparent` + 浅描边，本身已协调 |
+| `STYLE_CARDS` | 标准页对齐 fwx 规范 | **1（开）** | 锐捷保留的页面是纯 LuCI 表单，不吃这套规范就会和 fwx 页面"两个系统" |
+
+### 标准页对齐了什么（`STYLE_CARDS=1`）
+
+| 元素 | fwx 规范 | 主题原样 | 对齐后 |
+|---|---|---|---|
+| 区块 | `.fwx-form-card` | `fieldset` 只有 margin/padding | 1px `#e5e7eb` + 8 圆角 + 16 内距 + **transparent** |
 | 标题 | `.form-title` 18px | `legend` 19.5px | 18px |
 | 字段行 | `.form-row` `mb10/gap10` | `.cbi-value` `mb18` | `mb10 + gap10` |
-| 标签宽 | `.form-label` 140px | `.cbi-value-title` 180px | 140px |
-| 开关 | `.switch` 40×20 滑块 | 原生 checkbox | **CSS 画成 40×20 滑块**（滑块 16，位移 20） |
-| 表格 | `.common-table` | `border-top: --border-color-medium` | `--border-color-low` + 表头 `--background-color-medium` |
-| 主按钮 | `.submit-button` 实心 | 描边风 | 实心填充 + 白字 |
-| 危险按钮 | `.btn-delete` 实心红 | 描边风 | 实心红 |
+| 标签宽 | `.form-label` 140px | `180px` | 140px |
+| 开关 | `.switch` 40x20，选中 `#2196F3` | 原生 checkbox | CSS 画成滑块（滑块 16 / 位移 20） |
+| 表格 | `.common-table` 表头**无底色** | 表头有底色 | 去掉底色，只留加粗 + `#e5e7eb` 描边 |
+| 保存类 | `.btn` `#10b981` | 描边风 | 实心绿 + 白字 + radius 4 |
+| 编辑/新增 | `.btn-edit` `#007bff` | 描边风 | 实心蓝 + 白字 |
+| 删除类 | `.btn-delete` `#ff4444` | 描边风 | 实心红 + 白字 |
 | 操作条 | 卡片内右下 | 底部通栏 | 右下对齐 + 8px 间距 |
+
+**两处早期错误已改**：① 卡片曾写成白底（`var(--background-color-high,#fff)`），
+深色模式下会出现白块，官方是 `transparent`；② 表头曾填
+`var(--background-color-medium)`，官方其实是透明。这两处都是拿像素实测对出来的。
 
 **刻意不改**：
 
-1. **不给 `.cbi-map` 限宽**。fwx 页面全是窄表单，限 780 好看；但标准页有宽表格
-   （无线客户端列表、防火墙规则），限宽会挤成横向滚动。
-2. **不动输入框、普通按钮、reset 按钮的底色**。主题已完整覆盖（`fieldset` 562 行、
-   `input/button` 252 行、`.cbi-value` 588 行、`.cbi-button` 2598 行），再覆盖一遍就是回归。
+1. **不给 `.cbi-map` 限宽 780**。fwx 的 780 是加在 `.fwx-form-card` 上的；LuCI 的
+   `.cbi-map` 同时包住宽表格（无线客户端列表、防火墙规则），限 780 会挤成横向滚动。
+2. **不动输入框、reset 按钮**。主题已完整覆盖（`fieldset` 562 行、`input/button`
+   252 行、`.cbi-value` 588 行、`.cbi-button` 2598 行），再覆盖一遍就是回归。
 3. **不重写锐捷的三个私有页面**。见下。
 
-### 为什么不重写锐捷的页面
+## 三之四、官网侧栏的 7 个一级菜单，分别由谁提供
 
-三个页面经核实是**纯 LuCI 表单 API**：
+官网截图的侧栏是 7 组（可展开）。全部对应到包，缺一个就少一组：
 
-| 页面 | 实现 | `E('div')` | `class=` | 内联 `style=` |
-|---|---|---|---|---|
-| `eqos.js` (3KB) | 全 `form.Map` / `TableSection` | 0 | 0 | 0 |
-| `turboacc.js` (78KB) | form API + E() 拼装 | 95 | **0** | 0 |
-| `wireless-mtk.js` (96KB) | form API + E() 拼装 | 13 | **2** | 0 |
+| 侧栏 | 子项 | 提供者 |
+|---|---|---|
+| 仪表板 | — | `luci-app-fwx-dashboard` |
+| 系统监控 | 会话统计 / 终端记录 | `-session-stat` / `-user-record`（父菜单 `fwx_monitor` 由前者的 `firstchild()` 建立） |
+| 终端列表 | — | `luci-app-fwx-user` |
+| **网络设置** | 工作模式 / LAN / WAN / 防火墙 | **`-network`**（+ `-firewall`） |
+| 行为管理 | 应用过滤 / MAC 过滤 | `-appfilter` / `-macfilter` |
+| 上网审计 | — | `-record`（+ `-record-whitelist`） |
+| 高级设置 | 特征库 / 仪表板配置 / 系统配置 | `-feature` / `-dashboard-setting` / `-system` |
 
-外观 100% 由主题 `cascade.css` 决定，主题对标准控件已有完整样式。
-手写重排这 174 KB JS 不会带来任何视觉收益，只会引入回归。
+早期漏装 `-network` 和 `-system`，侧栏就会缺「网络设置」整组、「高级设置 → 系统配置」。
+现已补上（`16 个界面包`）。
 
-### 想回到 fanchmwrt 原样
+**这两个包的实际风险（已读 `fwxd/src/fwx_network.c` 核实）**：
 
-触发构建时把 `style_cards` 选 `no`，或本地 `STYLE_CARDS=0`。改动只在一段 CSS，可随时切回。
+- `set_lan_info` 只写 `network.lan` 的 `proto / ipaddr / netmask / gateway / dns` 和
+  `dhcp` 段，且**显式拒绝在 LAN 上设 PPPoE**；`network.lan` 不存在时才新建 `interface` 段。
+- `set_wan_info` **不写死设备名**，只写 `network.wan` 的 `proto / username / password /
+  ipaddr / dns`——`device` 绑定仍由 immortalwrt 的默认配置决定，所以不会把 `eth2.1`
+  或 `wan` 弄错。这也是它反而能当 PPPoE 配置界面的原因。
+- `set_work_mode` **只写 `fwx.network.work_mode`**（它自己的配置），不重写 `network`。
+
+结论：不会自动破坏现有网络；只有你主动点「保存」才会改 LAN 的 IP/DHCP 参数。
 
 ## 四、构建失败时的降级开关
 

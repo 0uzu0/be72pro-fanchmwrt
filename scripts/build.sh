@@ -5,7 +5,8 @@
 # 环境变量：
 #   WORKDIR      构建工作目录（默认 $PWD/work）
 #   WITH_KMOD    1 = 编译 fwx.ko（默认），0 = 只出 UI+后端（保证能出固件）
-#   STYLE_CARDS  1 = 全站视觉统一（卡片 + 表格 + 按钮，默认 1）；0 = 保持 fanchmwrt 原样
+#   STYLE_CARDS  1 = 把标准页对齐 fwx 规范（默认 1）；0 = 保持主题原样
+#   STYLE_FWX    1 = fwx 页面改用主题变量（默认 0，保持官方硬编码色 = 1:1）
 #   JOBS         并行数（默认 nproc）
 #
 set -euo pipefail
@@ -16,6 +17,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 WORKDIR="${WORKDIR:-$PWD/work}"
 WITH_KMOD="${WITH_KMOD:-1}"
 STYLE_CARDS="${STYLE_CARDS:-1}"
+STYLE_FWX="${STYLE_FWX:-0}"
 JOBS="${JOBS:-$(nproc)}"
 
 RJ_REPO="https://github.com/RuijieNetworksCommunity/MT798X-6.6-24.10.git"
@@ -79,7 +81,7 @@ APPS="luci-app-fwx-resources luci-app-fwx-dashboard luci-app-fwx-dashboard-setti
 luci-app-fwx-user luci-app-fwx-user-record luci-app-fwx-appfilter luci-app-fwx-record \
 luci-app-fwx-record-whitelist luci-app-fwx-macfilter luci-app-fwx-mac-blacklist \
 luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
-luci-app-fwx-app-center"
+luci-app-fwx-app-center luci-app-fwx-network luci-app-fwx-system"
 
 mkdir -p "$RJ/package/fcm"
 for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
@@ -97,11 +99,16 @@ echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包 + 1 个主题
 python3 "$ROOT/scripts/check_api.py" "$RJ" \
 	|| warn "界面包与 fwxd 接口对不上 —— 相关页面可能空白（见上表）"
 
-# 样式桥接 A（默认启用）：fwx 页面的 common.css 里是硬编码色值
-# （#2885e8 蓝按钮、green 描边、白底卡片），不跟主题、深色模式下会突兀。
-# 追加一段 override 换成主题变量（--primary-color-high / --border-color-low ...）。
-python3 "$ROOT/scripts/style_bridge.py" --fwx "$RJ" \
-	|| warn "fwx 样式桥接未应用 —— 深色模式下 fwx 页面颜色可能突兀"
+# 样式桥接 A（默认关闭）：把 fwx 页面的硬编码色换成主题变量。
+# 关的原因：官网 UI 就是这套硬编码色（#10b981 保存 / #007bff 编辑 / #ff4444 删除 /
+# #2196F3 开关 / #e5e7eb 描边 / 卡片 transparent），换成主题变量反而偏离 1:1。
+# 只有想让 fwx 页面随主题换色时才 STYLE_FWX=1。
+if [ "$STYLE_FWX" = "1" ]; then
+	python3 "$ROOT/scripts/style_bridge.py" --fwx "$RJ" \
+		|| warn "fwx 样式桥接未应用"
+else
+	echo "  [skip] fwx 页面配色（STYLE_FWX=0，保持官方 1:1）"
+fi
 
 # 样式桥接 B（默认开启）：按 fwx 页面骨架重写标准页的表现层。
 # 骨架取自 fwx 真实页面（.fwx-form-card / .form-title / .form-row / .switch），
@@ -218,6 +225,8 @@ REQUIRED_SYMS=(
 	CONFIG_PACKAGE_luci-app-fwx-traffic-stat
 	CONFIG_PACKAGE_luci-app-fwx-feature
 	CONFIG_PACKAGE_luci-app-fwx-app-center
+	CONFIG_PACKAGE_luci-app-fwx-network
+	CONFIG_PACKAGE_luci-app-fwx-system
 )
 if [ "$WITH_KMOD" = "1" ]; then
 	REQUIRED_SYMS+=(CONFIG_PACKAGE_kmod-fwx)

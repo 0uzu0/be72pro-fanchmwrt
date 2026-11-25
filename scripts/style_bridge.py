@@ -1,26 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-样式桥接：把 fanchmwrt 的视觉语言统一到「主题变量 + 卡片规范」上。
+样式桥接：把「锐捷保留的 LuCI 页面」对齐到 fanchmwrt 自己的视觉规范。
 
-做三件事（对应 A / B / C）：
+依据不是猜的，全部取自官方源码与官网截图实测：
 
-  A. fwx 自有页面（14 个 luci-app-fwx-*）
-     它们的 common.css 是硬编码色值（#2885e8 / green / #ff4444），不跟主题、
-     不跟深浅色。追加一段 override，把颜色换成主题变量（--primary / --error /
-     --border-color-* 等）。CSS 同级后写者胜，所以追加即可，不改原文件。
+  common.css（fwx 页面样式）
+    .fwx-form-card  max-width 780 / padding 16 / 1px #e5e7eb / radius 8 / **transparent**
+    .form-row       flex / margin-bottom 10 / gap 10
+    .form-label     width 140
+    .switch         40x20 / radius 20 / 滑块 16 / 未选 #ccc / 选中 #2196F3
+    .btn            实心 #10b981 + 白字 + radius 4 + 600
+    .btn-edit       #007bff      .btn-delete  #ff4444
+  官网截图实测（lan.png，1804x893）
+    卡片 780x544；输入框 357x30；开关 37x19（含抗锯齿即 40x20）；
+    保存 #10b981；标题 18px；页面/卡片同底色、仅描边分界。
 
-  B. 锐捷保留的页面（无线 wireless-mtk.js、流量整形 eqos.js、网络加速 turboacc.js）
-     经核实这三个页面是纯 LuCI 表单 API + E('div') 拼装，零 class、零内联样式，
-     外观 100% 由主题 cascade.css 决定。所以不重写 JS（174KB 手写 JS 只会引入
-     回归），而是给主题补规则，让这些页面的 .cbi-* 结构落到 fanchmwrt 的卡片规范。
+两个可选层（构建时用 STYLE_FWX / STYLE_CARDS 控制）：
 
-  C. 通用控件层
-     输入框、按钮、表格、页脚操作条统一到主题变量，避免各页面自成一套。
+  A. --fwx   fwx 自有页面（14+2 个 luci-app-fwx-*）
+     它们的 common.css 是硬编码色值。默认**不启用**：官方 UI 就是这个色值，
+     换成主题变量反而偏离 1:1，且深色模式下官方卡片是 transparent + 浅描边，
+     本身已经协调。只有想让它们随主题换色时才开。
+
+  B. --theme 锐捷保留的页面（无线 wireless-mtk.js / 流量整形 eqos.js /
+     网络加速 turboacc.js）
+     经核实这三页是纯 LuCI 表单 API + E('div')，零 class、零内联样式，
+     外观 100% 由主题 cascade.css 决定。所以不重写 JS，只补 CSS，
+     让 .cbi-* 结构落到 fwx 的卡片规范。默认启用。
 
 用法：
-    python3 style_bridge.py --fwx   <源码树>   # 追加到 fwx 的 common.css
-    python3 style_bridge.py --theme <源码树>   # 追加到主题的 cascade.css
+    python3 style_bridge.py --fwx   <源码树>   # 追加到 fwx 的 common.css（A，可选）
+    python3 style_bridge.py --theme <源码树>   # 追加到主题的 cascade.css（B，默认）
 返回：0 = 已应用或已是目标状态；2 = 目标文件不存在
 """
 
@@ -115,14 +126,17 @@ THEME_BRIDGE = MARK + """
    不做的事：① 不给 .cbi-map 限宽——标准页有宽表格（无线客户端列表、防火墙规则），
    限 780 会挤成横向滚动；② 不动输入框与普通按钮底色——主题已完整覆盖。 */
 
-/* 1. 卡片：.fwx-form-card = 1px 描边 / 8 圆角 / 16 内距 / 白底 */
+/* 1. 卡片：.fwx-form-card = max-width 780 / 1px 描边 / 8 圆角 / 16 内距 / 透明底
+   注意背景必须是 transparent，不是白底：官方 common.css 第 91 行就是
+   `background: transparent`，深色模式下卡片与页面同色、仅靠描边分界。
+   早期写成 var(--background-color-high,#fff) 会在深色下出现白块。 */
 fieldset.cbi-section,
 .cbi-section-node {
-	border: 1px solid var(--border-color-low, #e5e7eb);
+	border: 1px solid #e5e7eb;
 	border-radius: 8px;
 	padding: 16px;
 	margin-bottom: 16px;
-	background: var(--background-color-high, #fff);
+	background: transparent;
 }
 
 /* 2. 标题与说明：.form-title 18px / .form-desc 13px 灰 */
@@ -155,7 +169,9 @@ fieldset.cbi-section legend,
 }
 .cbi-value-field { margin-left: 0; }
 
-/* 4. 开关：把 checkbox 画成 fwx 的 .switch（40x20 / 滑块 16 / 选中位移 20） */
+/* 4. 开关：把 checkbox 画成 fwx 的 .switch
+   （原样照抄 common.css 第 40-80 行：40x20 / 圆角 20 / 滑块 16 / 未选 #ccc /
+   选中 #2196F3 / 位移 20px。截图实测 37x19，含抗锯齿边界即 40x20。） */
 .cbi-value-field input[type="checkbox"] {
 	-webkit-appearance: none;
 	appearance: none;
@@ -164,11 +180,11 @@ fieldset.cbi-section legend,
 	height: 20px;
 	margin: 0;
 	border: none;
-	border-radius: 10px;
-	background: var(--border-color-medium, #ccc);
+	border-radius: 20px;
+	background: #ccc;
 	position: relative;
 	cursor: pointer;
-	transition: background .2s;
+	transition: background .4s;
 }
 .cbi-value-field input[type="checkbox"]::after {
 	content: "";
@@ -179,43 +195,59 @@ fieldset.cbi-section legend,
 	height: 16px;
 	border-radius: 50%;
 	background: #fff;
-	transition: transform .2s;
+	transition: transform .4s;
 }
-.cbi-value-field input[type="checkbox"]:checked {
-	background: var(--primary-color-high, #1976d2);
-}
+.cbi-value-field input[type="checkbox"]:checked { background: #2196f3; }
 .cbi-value-field input[type="checkbox"]:checked::after { transform: translateX(20px); }
 .cbi-value-field input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
 
-/* 5. 表格：对齐 .common-table 的边框与表头 */
+/* 5. 表格：对齐 .common-table（第 139-156 行）
+   官方表头**没有底色**，只有加粗 + 1px 描边；早期我给表头填了
+   var(--background-color-medium)，深色下会多出一条灰带，与官方不符，已去掉。 */
 .table .td,
-.table .th { border-top-color: var(--border-color-low, #e5e7eb); }
+.table .th { border-color: #e5e7eb; }
 .table .tr:first-child .th {
-	background: var(--background-color-medium, #f5f5f5);
-	color: var(--text-color-highest, #111);
+	background: transparent;
+	font-weight: bold;
+	color: inherit;
 }
 
-/* 6. 按钮：主操作实心、危险操作实心红，与 .submit-button / .btn-delete 一致 */
+/* 6. 按钮：照抄 common.css 的调色板（第 181-236 行）
+     .btn        实心 #10b981 + 白字 + radius4 + 600  → 保存类（apply/save/positive）
+     .btn-edit   实心 #007bff                          → 编辑类（action/add）
+     .btn-delete 实心 #ff4444                          → 删除类（negative/remove）
+     .btn-secondary 透明底 + #10b981 描边字             → reset 保持主题描边风，不改
+   截图核对：LAN 页「保存」= #10b981、应用过滤「新增规则/编辑」= #007bff、
+   「删除」= #ff4444，与本节一一对应。 */
 .cbi-button-apply,
-.cbi-button-action,
 .cbi-button-save,
-.cbi-button-positive,
+.cbi-button-positive {
+	color: #fff;
+	background: #10b981;
+	border: 1px solid #10b981;
+	border-radius: 4px;
+	font-weight: 600;
+}
+.cbi-button-action,
 .cbi-button-add,
 .cbi-button-fieldadd {
 	color: #fff;
-	background: var(--primary-color-high, #1976d2);
-	border-color: var(--primary-color-high, #1976d2);
+	background: #007bff;
+	border: 1px solid #007bff;
+	border-radius: 4px;
+	font-weight: 600;
 }
 .cbi-button-negative,
 .cbi-button-remove {
 	color: #fff;
-	background: var(--error-color-high, #e8210d);
-	border-color: var(--error-color-high, #e8210d);
+	background: #ff4444;
+	border: 1px solid #ff4444;
+	border-radius: 4px;
 }
 .cbi-button-apply:hover,
-.cbi-button-action:hover,
 .cbi-button-save:hover,
 .cbi-button-positive:hover,
+.cbi-button-action:hover,
 .cbi-button-add:hover,
 .cbi-button-fieldadd:hover,
 .cbi-button-negative:hover,
