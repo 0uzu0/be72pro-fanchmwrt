@@ -75,14 +75,25 @@ echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包"
 
 # ---------------------------------------------------------------- 3. 打补丁
 log "3/8 应用补丁"
-cd "$RJ"
 
-# 3.1 HNAT 方案三：fwx 拉黑即清 PPE 表项（与内核无关，总是应用）
+# apply_patch <工作目录> <补丁> <描述>
+#   统一用 --batch 避免 CI 里弹交互提示；失败只告警，不中断整次构建
+apply_patch() {
+	local dir="$1" pf="$2" desc="$3"
+	if ( cd "$dir" && patch -p1 -N --batch --forward < "$pf" ) >/dev/null 2>&1; then
+		echo "  [+] $desc"
+		return 0
+	fi
+	warn "$desc 应用失败（跳过，功能降级）"
+	return 1
+}
+
+# 3.1 HNAT 方案三：fwx 拉黑即清 PPE 表项（补丁路径相对 package/fcm/fwx）
 if grep -q "ppe_del_entry_by_mac" package/fcm/fwx/src/fwx_mac_filter.c 2>/dev/null; then
 	echo "  [skip] 0003 已应用"
 else
-	patch -p1 --forward < "$ROOT/patches/0003-fwx-flush-hnat-entries.patch"
-	echo "  [+] 0003 拉黑即清表"
+	apply_patch "package/fcm/fwx" "$ROOT/patches/0003-fwx-flush-hnat-entries.patch" \
+		"0003 拉黑即清 PPE 表项" || true
 fi
 
 if [ "$WITH_KMOD" = "1" ]; then
@@ -90,9 +101,9 @@ if [ "$WITH_KMOD" = "1" ]; then
 	if grep -q "fwx_data" target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c; then
 		echo "  [skip] 0002 已应用"
 	else
-		( cd target/linux/mediatek/files-6.6 && \
-		  patch -p1 --forward < "$ROOT/patches/0002-hnat-skip-fwx-dropped-flows.patch" )
-		echo "  [+] 0002 DPI 判死的流不进 PPE"
+		apply_patch "target/linux/mediatek/files-6.6" \
+			"$ROOT/patches/0002-hnat-skip-fwx-dropped-flows.patch" \
+			"0002 DPI 判死的流不进 PPE" || warn "  继续构建，但被拦连接可能仍被硬件加速"
 	fi
 
 	# 3.3 内核：struct nf_conn 增加 fwx_data
