@@ -53,6 +53,39 @@ FWX_ANCHOR = (
     "\t\tmac_filter_write_unlock();\n"
 )
 
+# 规则修改路径（fwx_api_mod_mac_filter_rule）的收尾清表：
+# 这条路径直接用 fwx_add_mac_node 建节点，不经过 fwx_add_mac_to_rule，
+# 不补这一段的话「立即断网」在 UI 改规则时根本不触发。
+FWX_MOD_MARK = "fwx-flush-mod"
+FWX_MOD_ANCHOR = "\n\treturn 0;\n}\n\nint fwx_api_del_mac_filter_rule(cJSON *data_obj) {"
+
+FWX_MOD_INSERT = """\t/* fwx-flush-mod: 规则变更后清掉相关终端的 PPE 表项，让拦截立即生效。
+\t * 单独再取一次 mac_list，避免依赖上面那段里可能未初始化的 mac_array。
+\t */
+\tif (action_obj) {
+\t\tint act = action_obj->valueint;
+
+\t\tif (act == 3) {
+\t\t\tcJSON *m = cJSON_GetObjectItem(data_obj, "mac");
+\t\t\tu8 mac_bin[ETH_ALEN] = {0};
+
+\t\t\tif (m && mac_str_to_bin(m->valuestring, mac_bin))
+\t\t\t\tfwx_hnat_flush_mac(mac_bin);
+\t\t} else if (act == 1 || act == 2) {
+\t\t\tcJSON *ma = cJSON_GetObjectItem(data_obj, "mac_list");
+\t\t\tint n = ma ? cJSON_GetArraySize(ma) : 0;
+
+\t\t\tfor (i = 0; i < n; i++) {
+\t\t\t\tcJSON *m = cJSON_GetArrayItem(ma, i);
+\t\t\t\tu8 mac_bin[ETH_ALEN] = {0};
+
+\t\t\t\tif (m && mac_str_to_bin(m->valuestring, mac_bin))
+\t\t\t\t\tfwx_hnat_flush_mac(mac_bin);
+\t\t\t}
+\t\t}
+\t}
+"""
+
 FWX_CALL_INSERT = """\t\t/*
 \t\t * 立即清掉该终端已绑定的 PPE 表项：下一包重新走 netfilter，
 \t\t * fwx 的 drop 即刻生效，不必等硬件表项老化。
@@ -143,28 +176,40 @@ def apply_fwx(root):
         return 2
 
     src = read(path)
-    if STAMP_FWX in src:
-        print("  [skip] fwx_mac_filter 已含清表调用")
+    todo = []
+
+    # 1) 辅助函数：插到最后一个 #include 之后（这个位置上游几乎不会动）
+    if "static void fwx_hnat_flush_mac" not in src:
+        lines = src.splitlines(keepends=True)
+        idxs = [i for i, ln in enumerate(lines) if ln.startswith("#include")]
+        if not idxs:
+            print("  [!] 找不到 #include，未修改")
+            return 2
+        lines.insert(idxs[-1] + 1, FWX_HELPER)
+        src = "".join(lines)
+        todo.append("helper")
+
+    # 2) add_mac_to_rule 路径（当前上游未调用，留着兼容后续版本）
+    if FWX_ANCHOR in src and "fwx_hnat_flush_mac(mac);" not in src:
+        src = src.replace(FWX_ANCHOR, FWX_ANCHOR + FWX_CALL_INSERT, 1)
+        todo.append("add_mac")
+
+    # 3) 规则修改路径（UI 实际走这里）
+    if FWX_MOD_MARK not in src:
+        if FWX_MOD_ANCHOR not in src:
+            print("  [!] 规则修改函数的锚点未命中，未插入（立即断开将不生效）")
+            return 2
+        src = src.replace(FWX_MOD_ANCHOR, FWX_MOD_INSERT + FWX_MOD_ANCHOR, 1)
+        todo.append("mod")
+
+    if not todo:
+        print("  [skip] fwx_mac_filter 已是目标状态")
         return 0
 
-    # 1) 辅助函数插到最后一个 #include 之后（这个位置上游几乎不会动）
-    lines = src.splitlines(keepends=True)
-    idxs = [i for i, ln in enumerate(lines) if ln.startswith("#include")]
-    if not idxs:
-        print("  [!] 找不到 #include，未修改")
-        return 2
-    lines.insert(idxs[-1] + 1, FWX_HELPER)
-    src = "".join(lines)
-
-    # 2) 调用点插到 add_mac → unlock 之后
-    if src.count(FWX_ANCHOR) != 1:
-        print("  [!] fwx 锚点命中 %d 次（期望 1 次），未修改" % src.count(FWX_ANCHOR))
-        return 2
-    src = src.replace(FWX_ANCHOR, FWX_ANCHOR + FWX_CALL_INSERT, 1)
-
     write(path, src)
-    ok = STAMP_FWX in read(path)
-    print("  [+] fwx: 拉黑时按 MAC 清 PPE 表项" if ok else "  [!] fwx 写入校验失败")
+    chk = read(path)
+    ok = (STAMP_FWX in chk) and (FWX_MOD_MARK in chk)
+    print("  [+] fwx: 清表调用已插入 (%s)" % ",".join(todo) if ok else "  [!] fwx 写入校验失败")
     return 0 if ok else 2
 
 
