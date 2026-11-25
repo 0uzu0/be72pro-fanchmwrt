@@ -5,7 +5,7 @@
 # 环境变量：
 #   WORKDIR      构建工作目录（默认 $PWD/work）
 #   WITH_KMOD    1 = 编译 fwx.ko（默认），0 = 只出 UI+后端（保证能出固件）
-#   STYLE_CARDS  1 = 把标准 LuCI 页面也卡片化（默认 0，保持 fanchmwrt 原样）
+#   STYLE_CARDS  1 = 全站视觉统一（卡片 + 表格 + 按钮，默认 1）；0 = 保持 fanchmwrt 原样
 #   JOBS         并行数（默认 nproc）
 #
 set -euo pipefail
@@ -15,7 +15,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 
 WORKDIR="${WORKDIR:-$PWD/work}"
 WITH_KMOD="${WITH_KMOD:-1}"
-STYLE_CARDS="${STYLE_CARDS:-0}"
+STYLE_CARDS="${STYLE_CARDS:-1}"
 JOBS="${JOBS:-$(nproc)}"
 
 RJ_REPO="https://github.com/RuijieNetworksCommunity/MT798X-6.6-24.10.git"
@@ -103,15 +103,18 @@ python3 "$ROOT/scripts/check_api.py" "$RJ" \
 python3 "$ROOT/scripts/style_bridge.py" --fwx "$RJ" \
 	|| warn "fwx 样式桥接未应用 —— 深色模式下 fwx 页面颜色可能突兀"
 
-# 样式桥接 B（默认关闭）：把标准 LuCI 页面也卡片化。
-# fanchmwrt 自己的网络/无线/系统页本来不是卡片风，强加会偏离 1:1，所以只在
-# STYLE_CARDS=1 时启用。锐捷保留的页面（wireless-mtk / turboacc / eqos）本就是
-# 纯 LuCI 表单 API + 零 class，主题已完整覆盖，无需重写 JS。
+# 样式桥接 B（默认开启）：全站视觉统一。
+# 把标准 LuCI 页面对齐到 fwx 页面的规范 —— 区块卡片化（16 内距 / 1px 描边 /
+# 8 圆角）、标题 18px、表格边框与表头底色、主按钮改实心填充。
+# 不做的事：① 不给 .cbi-map 限宽（标准页有宽表格，限 780 会挤成横向滚动）；
+#           ② 不动输入框与普通按钮底色（主题已完整覆盖，改了是回归）。
+# 锐捷保留的页面（wireless-mtk / turboacc / eqos）本就是纯 LuCI 表单 API +
+# 零 class，靠这一层即可统一，无需重写 JS。
 if [ "$STYLE_CARDS" = "1" ]; then
 	python3 "$ROOT/scripts/style_bridge.py" --theme "$RJ" \
-		|| warn "标准页卡片化未应用 —— 视觉仍为主题默认"
+		|| warn "全站视觉统一未应用 —— 视觉仍为主题默认"
 else
-	echo "  [skip] 标准页卡片化（STYLE_CARDS=0，保持 fanchmwrt 原样）"
+	echo "  [skip] 全站视觉统一（STYLE_CARDS=0，保持 fanchmwrt 原样）"
 fi
 
 # ---------------------------------------------------------------- 3. 打补丁

@@ -128,26 +128,52 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 
 ---
 
-## 三之三、UI 样式：做到什么程度
+## 三之三、UI 样式：全站统一
 
-目标分三层，实现程度如下：
+目标是把「fanchmwrt 自有页面」和「锐捷保留的页面」拉成同一套视觉。做法分三层：
 
 | 层 | 做法 | 默认 |
 |---|---|---|
-| **A. fwx 自有页面跟随主题** | fwx 的 `common.css` 里是硬编码色值（`#2885e8` 蓝按钮、`green` 描边、`#ff4444` 删除键、白底卡片），不跟主题、深色模式下突兀。构建时追加一段 override，换成主题变量（`--primary-color-high` / `--error-color-high` / `--border-color-low` …），14 个页面立刻跟随换色与深浅色 | **开** |
-| **B. 标准页卡片化** | 把 LuCI 标准页面（网络/无线/系统）也包成 fwx 样的卡片（780 宽 / 16 内距 / 1px 描边 / 8 圆角） | **关**（`STYLE_CARDS=1` 开） |
+| **A. fwx 页面跟随主题变量** | fwx 的 `common.css` 里是硬编码色值（`#2885e8` 蓝按钮、`green` 描边、`#ff4444` 删除键、白底卡片），不跟主题、深色模式下突兀。构建时追加 override 换成主题变量（`--primary-color-high` / `--error-color-high` / `--border-color-low` …，均带兜底），14 个页面立刻跟随换色与深浅色 | **开** |
+| **B. 标准页对齐 fwx 规范** | 区块卡片化（16 内距 / 1px 描边 / 8 圆角）、标题 18px、表格边框与表头底色、主按钮改实心填充白字、危险按钮实心红 | **开**（`STYLE_CARDS=0` 关） |
 | **C. 重写锐捷页面** | 不需要 | — |
 
-**为什么 C 不做**：锐捷保留的三个页面经核实是纯 LuCI 表单 API 拼装——
-`eqos.js` 全是 `form.Map/TableSection`；`turboacc.js` 78 KB、`wireless-mtk.js` 96 KB
-里 `E('div')` 用了 95 / 13 次，但 **`class=` 出现 0 次、内联 `style=` 也是 0**。
-它们的外观 100% 由主题的 `cascade.css` 决定，而主题对 `fieldset`(562 行)、
-`input/button/select`(252 行)、`.cbi-value`(588 行) 都已有完整样式。
-手写重排这 174 KB 只会引入回归，不会带来任何视觉收益。
+### B 层具体改了什么，以及刻意没改什么
 
-**为什么 B 默认关**：fanchmwrt 自己的标准页（网络/无线/系统）本来就不是卡片风，
-只有它自家的 fwx 页面用 `.fwx-form-card` 做卡片。给标准页强加卡片会**偏离原样**，
-所以做成开关而不是默认。
+改（都是为了让标准页和 fwx 页面一致）：
+
+| 元素 | 主题原样 | 统一后 |
+|---|---|---|
+| 区块 | `fieldset` 只有 margin/padding，靠分隔线连排 | 1px 描边 + 8 圆角 + 16 内距的白卡 |
+| 区块标题 | `legend` 19.5px | 18px（同 `.form-title`） |
+| 表格 | 单元格 `border-top: --border-color-medium`，表头无底色 | 边框 `--border-color-low`，表头 `--background-color-medium`（同 `.common-table`） |
+| 主按钮 | 描边风（边框取主色、文字同色） | 实心填充 + 白字（同 `.submit-button`） |
+| 危险按钮 | 描边风 | 实心红（同 `.btn-delete`） |
+
+**刻意不改**：
+
+1. **不给 `.cbi-map` 限宽**。fwx 页面全是窄表单，限 780 好看；但标准页有宽表格
+   （无线客户端列表、防火墙规则），限宽会挤成横向滚动。
+2. **不动输入框、普通按钮、reset 按钮的底色**。主题已完整覆盖（`fieldset` 562 行、
+   `input/button` 252 行、`.cbi-value` 588 行、`.cbi-button` 2598 行），再覆盖一遍就是回归。
+3. **不重写锐捷的三个私有页面**。见下。
+
+### 为什么不重写锐捷的页面
+
+三个页面经核实是**纯 LuCI 表单 API**：
+
+| 页面 | 实现 | `E('div')` | `class=` | 内联 `style=` |
+|---|---|---|---|---|
+| `eqos.js` (3KB) | 全 `form.Map` / `TableSection` | 0 | 0 | 0 |
+| `turboacc.js` (78KB) | form API + E() 拼装 | 95 | **0** | 0 |
+| `wireless-mtk.js` (96KB) | form API + E() 拼装 | 13 | **2** | 0 |
+
+外观 100% 由主题 `cascade.css` 决定，主题对标准控件已有完整样式。
+手写重排这 174 KB JS 不会带来任何视觉收益，只会引入回归。
+
+### 想回到 fanchmwrt 原样
+
+触发构建时把 `style_cards` 选 `no`，或本地 `STYLE_CARDS=0`。改动只在一段 CSS，可随时切回。
 
 ## 四、构建失败时的降级开关
 

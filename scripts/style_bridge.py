@@ -92,17 +92,18 @@ h1, h2 { color: var(--text-color-highest, #111); }
 # 含 .fwx-form-card 的页面 —— 浏览器不支持 :has() 时该条规则整体失效，退化成
 # 主题原样，不会把 fwx 页面弄坏。
 THEME_BRIDGE = MARK + """
-/* B. 可选：把标准 LuCI 页面卡片化，向 fwx 自有页面（.fwx-form-card）的
-   780 / 16 / 1px / 8px 规范靠拢。
+/* B. 全站视觉统一：把标准 LuCI 页面（网络/无线/系统/防火墙/流量整形/网络加速）
+   对齐到 fwx 自有页面的规范。
 
-   默认不启用 —— fanchmwrt 自己的标准页（网络/无线/系统）本来就不是卡片风，
-   强行卡片化反而偏离 1:1。只有 STYLE_CARDS=1 时才追加这一段。
+   差异来源（逐个核过 cascade.css）：
+     · 区块  主题只有 fieldset 的 margin/padding，没有边框 → fwx 是 .fwx-form-card
+     · 标题  legend 19.5px                                  → fwx 是 .form-title 18px
+     · 表格  单元格 border-top 用 --border-color-medium       → fwx 用 --border-color-low
+     · 按钮  描边风（border 取主色、文字同色）                → fwx 是实心填充白字
 
-   这里刻意只动「卡片几何」，不碰 input / button / table：
-   主题 cascade.css 已经完整覆盖了那些控件（fieldset 562 行、input/button 252 行、
-   .cbi-value 588 行），再覆盖一遍就是纯回归。 */
-.cbi-map { max-width: 780px; margin: 0 auto; }
-
+   刻意不动输入框和普通按钮的底色（主题已完整覆盖，改了就是回归）。
+   也刻意不给 .cbi-map 限宽：fwx 页面全是窄表单，但标准页有宽表格
+   （无线客户端列表、防火墙规则），限 780 会挤成横向滚动。 */
 fieldset.cbi-section,
 .cbi-section-node {
 	border: 1px solid var(--border-color-low, #e5e7eb);
@@ -111,11 +112,52 @@ fieldset.cbi-section,
 	margin-bottom: 16px;
 	background: var(--background-color-high, #fff);
 }
-fieldset.cbi-section legend {
+fieldset.cbi-section legend,
+.cbi-section-node > h3 {
 	font-size: 18px;
 	font-weight: 600;
+	padding-top: 0;
 	color: var(--text-color-highest, #111);
 }
+
+/* 表格：边框色与表头底色对齐 fwx 的 .common-table */
+.table .td,
+.table .th { border-top-color: var(--border-color-low, #e5e7eb); }
+.table .tr:first-child .th {
+	background: var(--background-color-medium, #f5f5f5);
+	color: var(--text-color-highest, #111);
+}
+
+/* 主操作按钮：实心填充，对齐 fwx 的 .submit-button */
+.cbi-button-apply,
+.cbi-button-action,
+.cbi-button-save,
+.cbi-button-positive,
+.cbi-button-add,
+.cbi-button-fieldadd {
+	color: #fff;
+	background: var(--primary-color-high, #1976d2);
+	border-color: var(--primary-color-high, #1976d2);
+}
+.cbi-button-apply:hover,
+.cbi-button-action:hover,
+.cbi-button-save:hover,
+.cbi-button-positive:hover,
+.cbi-button-add:hover,
+.cbi-button-fieldadd:hover { filter: brightness(0.92); }
+
+/* 危险操作：实心红，对齐 fwx 的 .btn-delete。
+   reset（取消/重置）不在此列 —— 它不是破坏性操作，保持主题的描边样式。 */
+.cbi-button-negative,
+.cbi-button-remove {
+	color: #fff;
+	background: var(--error-color-high, #e8210d);
+	border-color: var(--error-color-high, #e8210d);
+}
+.cbi-button-negative:hover,
+.cbi-button-remove:hover { filter: brightness(0.92); }
+
+/* 操作条与卡片收尾对齐 */
 .cbi-page-actions {
 	border-top: 1px solid var(--border-color-low, #e5e7eb);
 	padding-top: 12px;
