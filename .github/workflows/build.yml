@@ -8,6 +8,11 @@ on:
         type: choice
         options: ['yes', 'no']
         default: 'yes'
+      style_cards:
+        description: '标准页卡片化（会偏离 fanchmwrt 原样）'
+        type: choice
+        options: ['no', 'yes']
+        default: 'no'
   push:
     branches: [main]
     paths:
@@ -72,6 +77,7 @@ jobs:
       - name: Build
         env:
           WITH_KMOD: ${{ github.event.inputs.with_kmod == 'no' && '0' || '1' }}
+          STYLE_CARDS: ${{ github.event.inputs.style_cards == 'yes' && '1' || '0' }}
           JOBS: 4
         run: |
           chmod +x scripts/build.sh

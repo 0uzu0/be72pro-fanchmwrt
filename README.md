@@ -128,6 +128,27 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 
 ---
 
+## 三之三、UI 样式：做到什么程度
+
+目标分三层，实现程度如下：
+
+| 层 | 做法 | 默认 |
+|---|---|---|
+| **A. fwx 自有页面跟随主题** | fwx 的 `common.css` 里是硬编码色值（`#2885e8` 蓝按钮、`green` 描边、`#ff4444` 删除键、白底卡片），不跟主题、深色模式下突兀。构建时追加一段 override，换成主题变量（`--primary-color-high` / `--error-color-high` / `--border-color-low` …），14 个页面立刻跟随换色与深浅色 | **开** |
+| **B. 标准页卡片化** | 把 LuCI 标准页面（网络/无线/系统）也包成 fwx 样的卡片（780 宽 / 16 内距 / 1px 描边 / 8 圆角） | **关**（`STYLE_CARDS=1` 开） |
+| **C. 重写锐捷页面** | 不需要 | — |
+
+**为什么 C 不做**：锐捷保留的三个页面经核实是纯 LuCI 表单 API 拼装——
+`eqos.js` 全是 `form.Map/TableSection`；`turboacc.js` 78 KB、`wireless-mtk.js` 96 KB
+里 `E('div')` 用了 95 / 13 次，但 **`class=` 出现 0 次、内联 `style=` 也是 0**。
+它们的外观 100% 由主题的 `cascade.css` 决定，而主题对 `fieldset`(562 行)、
+`input/button/select`(252 行)、`.cbi-value`(588 行) 都已有完整样式。
+手写重排这 174 KB 只会引入回归，不会带来任何视觉收益。
+
+**为什么 B 默认关**：fanchmwrt 自己的标准页（网络/无线/系统）本来就不是卡片风，
+只有它自家的 fwx 页面用 `.fwx-form-card` 做卡片。给标准页强加卡片会**偏离原样**，
+所以做成开关而不是默认。
+
 ## 四、构建失败时的降级开关
 
 `fwx.ko` 要打一个改动 `struct nf_conn` 的内核补丁，6.6 上存在失败可能。仓库已做两层兜底：

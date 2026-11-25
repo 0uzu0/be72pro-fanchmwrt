@@ -5,6 +5,7 @@
 # 环境变量：
 #   WORKDIR      构建工作目录（默认 $PWD/work）
 #   WITH_KMOD    1 = 编译 fwx.ko（默认），0 = 只出 UI+后端（保证能出固件）
+#   STYLE_CARDS  1 = 把标准 LuCI 页面也卡片化（默认 0，保持 fanchmwrt 原样）
 #   JOBS         并行数（默认 nproc）
 #
 set -euo pipefail
@@ -14,6 +15,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 
 WORKDIR="${WORKDIR:-$PWD/work}"
 WITH_KMOD="${WITH_KMOD:-1}"
+STYLE_CARDS="${STYLE_CARDS:-0}"
 JOBS="${JOBS:-$(nproc)}"
 
 RJ_REPO="https://github.com/RuijieNetworksCommunity/MT798X-6.6-24.10.git"
@@ -94,6 +96,23 @@ echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包 + 1 个主题
 # 数据是空的、保存没反应」。这一步在编译前 2 分钟内把版本错配暴露出来。
 python3 "$ROOT/scripts/check_api.py" "$RJ" \
 	|| warn "界面包与 fwxd 接口对不上 —— 相关页面可能空白（见上表）"
+
+# 样式桥接 A（默认启用）：fwx 页面的 common.css 里是硬编码色值
+# （#2885e8 蓝按钮、green 描边、白底卡片），不跟主题、深色模式下会突兀。
+# 追加一段 override 换成主题变量（--primary-color-high / --border-color-low ...）。
+python3 "$ROOT/scripts/style_bridge.py" --fwx "$RJ" \
+	|| warn "fwx 样式桥接未应用 —— 深色模式下 fwx 页面颜色可能突兀"
+
+# 样式桥接 B（默认关闭）：把标准 LuCI 页面也卡片化。
+# fanchmwrt 自己的网络/无线/系统页本来不是卡片风，强加会偏离 1:1，所以只在
+# STYLE_CARDS=1 时启用。锐捷保留的页面（wireless-mtk / turboacc / eqos）本就是
+# 纯 LuCI 表单 API + 零 class，主题已完整覆盖，无需重写 JS。
+if [ "$STYLE_CARDS" = "1" ]; then
+	python3 "$ROOT/scripts/style_bridge.py" --theme "$RJ" \
+		|| warn "标准页卡片化未应用 —— 视觉仍为主题默认"
+else
+	echo "  [skip] 标准页卡片化（STYLE_CARDS=0，保持 fanchmwrt 原样）"
+fi
 
 # ---------------------------------------------------------------- 3. 打补丁
 log "3/8 应用补丁"
