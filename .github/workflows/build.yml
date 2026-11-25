@@ -83,6 +83,8 @@ jobs:
           mkdir -p out
           BIN="$WORKDIR/MT798X-6.6-24.10/bin/targets/mediatek/filogic"
           cp -v "$BIN"/*be72*sysupgrade.bin out/ 2>/dev/null || true
+          # 包清单：排查「某个功能没编进去」时最直接的依据（ppp / kmod-* / luci-mod-*）
+          cp -v "$BIN"/*be72*.manifest out/ 2>/dev/null || true
           cp -v "$BIN"/sha256sums out/ 2>/dev/null || true
           ls -lh out || true
 

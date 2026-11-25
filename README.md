@@ -87,6 +87,47 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 
 ---
 
+## 三之二、刷完后先验 WAN / PPPoE
+
+这台设备的 WAN 不是一张独立网卡，而是交换机里的一个 VLAN：
+
+- `-mod`（swconfig）：WAN = `eth2.1`（mt7530 VLAN 1），LAN = `eth2.2`
+- `-dsa-mod`（DSA）：WAN = `wan`
+
+所以「拨不上号」多数不是 pppd 的问题，而是 WAN 设备本身没起来。按顺序查：
+
+```sh
+# 1) 刷的是哪个变体、WAN 设备叫什么
+cat /etc/board.json | grep -A3 '"wan"'
+ubus call network.interface.wan status | head -20
+
+# 2) 设备在不在、有没有 carrier
+ip -br link show eth2.1     # -mod
+ip -br link show wan        # -dsa-mod
+
+# 3) -mod 的 VLAN 靠 swconfig 下发，确认工具和 VLAN
+swconfig dev switch0 show | head -30
+
+# 4) pppd 侧
+logread -e pppd | tail -30
+ls /usr/lib/pppd/*/pppoe.so     # 缺失 = 没装 ppp-mod-pppoe
+ps | grep -c pppd
+```
+
+| 现象 | 原因 |
+|---|---|
+| `status` 里 `up:false` 且没有 `device` | 设备名对不上：刷了另一个变体的镜像 |
+| `swconfig: not found` | 用 `-dsa-mod` 的镜像跑了 `-mod` 的配置（或反之） |
+| `plugin pppoe.so not found` | 缺 `ppp-mod-pppoe` |
+| `Timeout waiting for PADO` | 线路/光猫桥接问题，不是固件 |
+| 拨上就断 | MTU 用了 1500（PPPoE 需 1492），或 HNAT 与 PPPoE 打架，可试<br>`echo 0 > /sys/kernel/debug/hnat/hook_toggle` |
+
+**可以先排除的一项**：`fwx.ko` 只在 IPv4/IPv6 的 `PRE_ROUTING`（`conntrack+1`）挂钩。PPPoE 发现帧是
+EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fwx 拦不掉拨号；默认动作也是放行
+（`ct->fwx_data.action == 0`）。真要验证：`rmmod fwx && /etc/init.d/network restart`，如果还是拨不上，就与它无关。
+
+---
+
 ## 四、构建失败时的降级开关
 
 `fwx.ko` 要打一个改动 `struct nf_conn` 的内核补丁，6.6 上存在失败可能。仓库已做两层兜底：

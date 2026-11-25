@@ -162,6 +162,12 @@ REQUIRED_SYMS=(
 	CONFIG_LUCI_LANG_zh_Hans
 	CONFIG_PACKAGE_luci-i18n-base-zh-cn
 	CONFIG_PACKAGE_luci-compat
+	CONFIG_PACKAGE_luci-mod-admin-full
+	CONFIG_PACKAGE_luci-app-firewall
+	CONFIG_PACKAGE_luci-proto-ppp
+	CONFIG_PACKAGE_uhttpd
+	CONFIG_PACKAGE_ppp
+	CONFIG_PACKAGE_ppp-mod-pppoe
 	CONFIG_PACKAGE_luci-theme-fanchmwrt
 	CONFIG_PACKAGE_libfwx_common
 	CONFIG_PACKAGE_fwxd
