@@ -1,0 +1,34 @@
+--- a/include/net/netfilter/nf_conntrack.h	2026-11-25
++++ b/include/net/netfilter/nf_conntrack.h	2026-11-25
+@@ -70,4 +70,20 @@
+ #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
+ #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
+ 
++/*
++ * FanchmWrt fwx: per-connection DPI state.
++ *
++ * fwx.ko 只使用 action / match_status / app_id / host 四个成员。
++ * 结构体位于 union nf_conntrack_proto proto 之前，
++ * 不会被 memset_after(ct, 0, __nfct_init_offset) 覆盖，
++ * 因此必须在 nf_conntrack_alloc() 里显式清零（见下个文件）。
++ */
++struct nf_fwx_data {
++	u32 mark;
++	u32 app_id;
++	u32 match_status;
++	u8 action;
++	u8 host[32];
++};
++
+ struct nf_conn {
+--- a/net/netfilter/nf_conntrack_core.c	2026-11-25
++++ b/net/netfilter/nf_conntrack_core.c	2026-11-25
+@@ -1700,3 +1700,8 @@
+ 	write_pnet(&ct->ct_net, net);
+ 	memset_after(ct, 0, __nfct_init_offset);
++	/*
++	 * fwx_data 在 __nfct_init_offset 之前，上面的 memset_after 清不到；
++	 * 不清零会读到上一条连接的残留 action，导致随机误封。
++	 */
++	memset(&ct->fwx_data, 0, sizeof(ct->fwx_data));
+ 	nf_ct_zone_add(ct, zone);

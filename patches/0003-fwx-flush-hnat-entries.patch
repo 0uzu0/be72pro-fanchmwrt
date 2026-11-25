@@ -1,0 +1,35 @@
+--- a/src/fwx_mac_filter.c	2026-11-25
++++ b/src/fwx_mac_filter.c	2026-11-25
+@@ -27,3 +27,15 @@
+ static mac_config_t g_mac_filter_whitelist;
+ 
++/*
++ * hnat 导出的按 MAC 清 PPE 表项接口（hnat.c 里 EXPORT_SYMBOL）。
++ * 未启用 HNAT 或 hook 被关闭时该指针为 NULL。
++ */
++extern int (*ppe_del_entry_by_mac)(unsigned char *mac);
++
++static void fwx_hnat_flush_mac(const unsigned char *mac)
++{
++	if (ppe_del_entry_by_mac)
++		ppe_del_entry_by_mac((unsigned char *)mac);
++}
++
+ int fwx_mac_filter_init(void) {
+@@ -109,10 +109,16 @@
+ int fwx_add_mac_to_rule(int rule_id, const unsigned char *mac) {
+ 	mac_filter_rule_t *rule;
+ 	
+ 	mac_filter_write_lock();
+ 	rule = fwx_find_mac_filter_rule(rule_id);
+ 	if (rule) {
+ 		fwx_add_mac_node(&rule->mac_list, mac);
+ 		mac_filter_write_unlock();
++		/*
++		 * 立刻清掉该终端已绑定的 PPE 表项：下一包重新走 netfilter，
++		 * fwx 的 drop 即刻生效，不必等硬件表项老化。
++		 * 必须放在解锁之后——清表要遍历整张 FOE 表，不能持锁。
++		 */
++		fwx_hnat_flush_mac(mac);
+ 		return 0;
+ 	}
