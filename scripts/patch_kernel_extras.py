@@ -61,18 +61,40 @@ FWX_CALL_INSERT = """\t\t/*
 \t\tfwx_hnat_flush_mac(mac);
 """
 
-FWX_HELPER = """
-/*
- * hnat 导出的按 MAC 清 PPE 表项接口（hnat.c 里 EXPORT_SYMBOL）。
- * 未启用 HNAT 或 hook 被关闭时该指针为 NULL。
- */
-extern int (*ppe_del_entry_by_mac)(unsigned char *mac);
+FWX_HELPER = """#include <linux/module.h>
 
+/*
+ * hnat 通过 EXPORT_SYMBOL 导出 ppe_del_entry_by_mac（按 MAC 清 PPE 表项）。
+ *
+ * 这里用 symbol_get 动态解析，而不是 extern 直接引用：mtkhnat 在本树里可能
+ * 被编成模块，直接引用会让 OpenWrt 依赖扫描报
+ *   "Package kmod-fwx is missing dependencies ... mtkhnat.ko"
+ * 而且没有对应的 kmod 包可以用 DEPENDS 补。
+ *
+ * symbol_get 解析不到时返回 NULL，此时退化为「不清表、等硬件表项自然老化」，
+ * 不影响其余功能。
+ */
+#ifdef CONFIG_MODULES
 static void fwx_hnat_flush_mac(const unsigned char *mac)
 {
-\tif (ppe_del_entry_by_mac)
-\t\tppe_del_entry_by_mac((unsigned char *)mac);
+	static int (**del_by_mac)(unsigned char *mac);
+	int (**p)(unsigned char *mac);
+
+	if (!del_by_mac) {
+		p = (int (**)(unsigned char *mac))symbol_get(ppe_del_entry_by_mac);
+		if (!p)
+			return;
+		del_by_mac = p;
+	}
+
+	if (*del_by_mac)
+		(*del_by_mac)((unsigned char *)mac);
 }
+#else
+static void fwx_hnat_flush_mac(const unsigned char *mac)
+{
+}
+#endif
 """
 
 
