@@ -75,16 +75,20 @@ echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包"
 
 # ---------------------------------------------------------------- 3. 打补丁
 log "3/8 应用补丁"
+cd "$RJ"
+[ -f ./scripts/feeds ] || { echo "!! $RJ 不是有效源码树（缺 scripts/feeds）"; exit 1; }
 
 # apply_patch <工作目录> <补丁> <描述>
 #   统一用 --batch 避免 CI 里弹交互提示；失败只告警，不中断整次构建
 apply_patch() {
 	local dir="$1" pf="$2" desc="$3"
-	if ( cd "$dir" && patch -p1 -N --batch --forward < "$pf" ) >/dev/null 2>&1; then
+	local out
+	if out=$( cd "$dir" && patch -p1 -N --batch --forward < "$pf" 2>&1 ); then
 		echo "  [+] $desc"
 		return 0
 	fi
 	warn "$desc 应用失败（跳过，功能降级）"
+	printf '%s\n' "$out" | tail -6
 	return 1
 }
 
@@ -118,8 +122,9 @@ fi
 
 # ---------------------------------------------------------------- 4. feeds
 log "4/8 feeds"
-[ -x ./scripts/feeds ] && { ./scripts/feeds update -a >/dev/null; ./scripts/feeds install -a >/dev/null; } \
-	|| { echo "  !! 没有 scripts/feeds"; exit 1; }
+./scripts/feeds update -a >/dev/null
+./scripts/feeds install -a >/dev/null
+echo "  feeds ok"
 
 # ---------------------------------------------------------------- 5. 配置
 log "5/8 配置"
