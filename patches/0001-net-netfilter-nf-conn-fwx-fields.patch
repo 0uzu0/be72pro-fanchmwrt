@@ -10,7 +10,7 @@
 + * fwx.ko 只使用 action / match_status / app_id / host 四个成员。
 + * 结构体位于 union nf_conntrack_proto proto 之前，
 + * 不会被 memset_after(ct, 0, __nfct_init_offset) 覆盖，
-+ * 因此必须在 nf_conntrack_alloc() 里显式清零（见下个文件）。
++ * 因此必须在 nf_conntrack_alloc() 里显式清零（见 nf_conntrack_core.c）。
 + */
 +struct nf_fwx_data {
 +	u32 mark;
@@ -21,6 +21,16 @@
 +};
 +
  struct nf_conn {
+@@ -121,6 +134,9 @@
+ 	/* Extensions */
+ 	struct nf_ct_ext *ext;
+ 
++	/* FanchmWrt fwx per-connection data */
++	struct nf_fwx_data fwx_data;
++
+ 	/* Storage reserved for other modules, must be the last member */
+ 	union nf_conntrack_proto proto;
+ };
 --- a/net/netfilter/nf_conntrack_core.c	2026-11-25
 +++ b/net/netfilter/nf_conntrack_core.c	2026-11-25
 @@ -1700,3 +1700,8 @@

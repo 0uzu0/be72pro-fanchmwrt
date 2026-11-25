@@ -144,11 +144,28 @@ check_cfg CONFIG_PACKAGE_fwxd
 if [ "$WITH_KMOD" = "1" ]; then check_cfg CONFIG_PACKAGE_kmod-fwx; fi
 
 # ---------------------------------------------------------------- 6. 内核
-log "6/8 内核准备（含 0001 应用，失败自动降级）"
-if ! make target/linux/prepare V=s > "$WORKDIR/kernel-prepare.log" 2>&1; then
-	if [ "$WITH_KMOD" = "1" ]; then
-		warn "内核补丁未能应用 —— 降级为「无 DPI 内核模块」，继续出固件"
-		tail -30 "$WORKDIR/kernel-prepare.log" || true
+log "6/8 内核准备（含 0001 应用校验）"
+
+# 判定内核是否真正就绪：不仅 prepare 要成功，还要确认 nf_conn 里真的有 fwx_data。
+# 上一版就是「patch 报成功、成员没加上」，直到编译 HNAT 才炸，白跑一小时。
+kernel_ready() {
+	make target/linux/prepare V=s > "$WORKDIR/kernel-prepare.log" 2>&1 || return 1
+	local kdir
+	kdir=$(ls -d build_dir/target-*/linux-mediatek_filogic/linux-6.6* 2>/dev/null | head -1)
+	[ -n "$kdir" ] || { echo "  找不到内核源码目录"; return 1; }
+	grep -q "struct nf_fwx_data fwx_data;" "$kdir/include/net/netfilter/nf_conntrack.h" \
+		|| { echo "  nf_conntrack.h 里没有 fwx_data 成员"; return 1; }
+	grep -q "memset(&ct->fwx_data" "$kdir/net/netfilter/nf_conntrack_core.c" \
+		|| { echo "  nf_conntrack_core.c 里没有清零语句"; return 1; }
+	return 0
+}
+
+if [ "$WITH_KMOD" = "1" ]; then
+	if kernel_ready; then
+		echo "  ✔ 内核已就绪：nf_conn.fwx_data 存在"
+	else
+		warn "内核补丁未生效 —— 降级为「无 DPI 内核模块」，继续出固件"
+		tail -20 "$WORKDIR/kernel-prepare.log" 2>/dev/null || true
 		rm -f target/linux/generic/hack-6.6/950-fwx-ct-fields.patch
 		# 0002 依赖 0001 的字段，必须一起撤销
 		( cd target/linux/mediatek/files-6.6 && \
@@ -157,11 +174,12 @@ if ! make target/linux/prepare V=s > "$WORKDIR/kernel-prepare.log" 2>&1; then
 		sed -i 's/^CONFIG_PACKAGE_kmod-fwx=y/# CONFIG_PACKAGE_kmod-fwx is not set/' .config
 		make target/linux/clean >/dev/null 2>&1 || true
 		make defconfig >/dev/null
-		make target/linux/prepare V=s
+		kernel_ready || { echo "!! 去掉 fwx 补丁后内核仍无法准备，终止"; tail -40 "$WORKDIR/kernel-prepare.log"; exit 1; }
 		WITH_KMOD=0
-	else
-		tail -50 "$WORKDIR/kernel-prepare.log"; exit 1
 	fi
+else
+	echo "  WITH_KMOD=0，跳过内核校验"
+	make target/linux/prepare V=s > "$WORKDIR/kernel-prepare.log" 2>&1
 fi
 
 # ---------------------------------------------------------------- 7. 编译
