@@ -118,8 +118,8 @@ jobs:
             Ruijie RG-BE72 Pro · immortalwrt-mt798x 6.6 + FanchmWrt fwx
 
             - 基础固件：RuijieNetworksCommunity/MT798X-6.6-24.10 @ 401e2ba
-            - fwx 来源：fanchmwrt **24.10.4** @ 9640f14 / fanchmwrt-packages 59c6b96
-            - 内核补丁：上游 980（nf_conn 字段）+ 981（nf_fwx_user 回调）
+            - fwx 来源：fanchmwrt **24.10.4** @ 9640f14 / fanchmwrt-packages @ 3c6ae71（与 fwxd 同期）
+            - 内核补丁：上游 980（nf_conn 字段）；981 经核实是死代码，未使用
             - 内核模块：${{ github.event.inputs.with_kmod == 'no' && '未编译（降级版）' || '已编译' }}
 
             刷机：`sysupgrade -n <文件>`（必须是 232.5 MiB 布局；stock 112.5M 布局不要刷）

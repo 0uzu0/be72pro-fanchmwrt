@@ -20,12 +20,15 @@ RJ_REPO="https://github.com/RuijieNetworksCommunity/MT798X-6.6-24.10.git"
 RJ_REF="401e2ba1682314e48aabaa1af28d0e161aa58554"
 
 FCM_REPO="https://github.com/fanchmwrt/fanchmwrt.git"
-# 24.10.4：与底座同代（OpenWrt 24.10 / kernel 6.6），且自带 980/981 两个 6.6 内核补丁。
+# 24.10.4：与底座同代（OpenWrt 24.10 / kernel 6.6），自带 980 这个 6.6 内核补丁。
 # 不要换回 25.12.x —— 那一版是给 6.12 写的，struct nf_fwx_data 布局也不同（host 是数组而非指针）。
 FCM_REF="9640f14b256065fd621de479b8d93762141504d3"
 
 PKG_REPO="https://github.com/fanchmwrt/fanchmwrt-packages.git"
-PKG_REF="59c6b967e611a8c8562f3fd17eaa6aec9977f071"
+# 必须与 fwxd 同期：2026-10-19（与 24.10.4 分支同一天）。
+# 用 main 的最新版会碰上版本错配 —— 实测 macfilter 缺 9 个 api、dashboard 缺 2 个、
+# user 缺 2 个（新版把它们换成了别的接口），表现为页面空白/点了没反应。
+PKG_REF="3c6ae7117843b46aa95b57d615874101d2db8700"
 
 RJ="$WORKDIR/MT798X-6.6-24.10"
 FCM="$WORKDIR/fanchmwrt"
@@ -87,13 +90,18 @@ for a in $APPS; do
 done
 echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包 + 1 个主题"
 
+# 界面包与 fwxd 是两套仓库，靠 ubus {"api":"..."} 对接；取错版本会「页面能打开、
+# 数据是空的、保存没反应」。这一步在编译前 2 分钟内把版本错配暴露出来。
+python3 "$ROOT/scripts/check_api.py" "$RJ" \
+	|| warn "界面包与 fwxd 接口对不上 —— 相关页面可能空白（见上表）"
+
 # ---------------------------------------------------------------- 3. 打补丁
 log "3/8 应用补丁"
 cd "$RJ"
 [ -f ./scripts/feeds ] || { echo "!! $RJ 不是有效源码树（缺 scripts/feeds）"; exit 1; }
 
 # 两类改动、两种打法：
-#   内核侧 980/981 —— 上游写好的补丁，原样丢进 hack-6.6，绝不自己改上下文
+#   内核侧 980 —— 上游写好的补丁，原样丢进 hack-6.6，绝不自己改上下文
 #   hnat / fwx 侧 —— 「往既有函数里插几行」，用锚点脚本，不用 unified diff
 #                    （diff 只要上游改一行就失效，实测过 git apply 能过、
 #                      GNU patch 在 hunk 中间对不上）
@@ -109,16 +117,17 @@ if [ "$WITH_KMOD" = "1" ]; then
 	python3 "$ROOT/scripts/patch_kernel_extras.py" --hnat "$RJ" \
 		|| warn "hnat 补丁未应用 —— 被拦连接可能仍会被硬件加速"
 
-	# 3.3 内核：用上游 24.10 自带的两个 6.6 补丁，不再自造
-	#     980 = struct nf_fwx_data（host 是指针）+ nf_conn 成员 + 分配时置零
-	#     981 = nf_fwx_user 回调注册 + user_ptr/session_node + procfs 输出
-	#     顺序必须 980 先于 981（981 往 980 建的结构体里再加两个成员），
-	#     hack-6.6 按文件名排序应用，编号天然保证。
+	# 3.3 内核：只用上游 24.10.4 的 980
+	#     980 = struct nf_fwx_data（host 是指针）+ nf_conn 成员 + 分配时逐字段置零
+	#     上游还有 981（nf_fwx_user 回调 + procfs 输出），经核实是死代码：
+	#       · 24.10.4 的 fwx.ko 全模块没有一处引用 nf_fwx_user_* / user_ptr / session_node
+	#       · fwxd 走 netlink 上报，不解析 /proc/net/nf_conntrack
+	#     多贴 981 只会多 4 个 hunk（含最易漂移的 nf_conntrack_standalone.c），
+	#     命中失败就整体降级，所以不带。
 	mkdir -p target/linux/generic/hack-6.6
-	for p in 980-nf-contrack-support-fwx-data.patch 981-add-fwx-user-ops.patch; do
-		cp "$ROOT/patches/$p" "target/linux/generic/hack-6.6/$p"
-	done
-	echo "  [+] 980/981 内核补丁（进 hack-6.6）"
+	cp "$ROOT/patches/980-nf-contrack-support-fwx-data.patch" \
+	   target/linux/generic/hack-6.6/980-nf-contrack-support-fwx-data.patch
+	echo "  [+] 980 内核补丁（进 hack-6.6）"
 else
 	warn "WITH_KMOD=0：跳过内核补丁，并解除界面包对 kmod-fwx 的依赖"
 	sed -i 's/+kmod-fwx //g' package/luci-app-fwx-*/Makefile || true
@@ -192,7 +201,7 @@ fi
 require_cfg "${REQUIRED_SYMS[@]}"
 
 # ---------------------------------------------------------------- 6. 内核
-log "6/8 内核准备（含 980/981 应用校验）"
+log "6/8 内核准备（含 980 应用校验）"
 
 # 判定「内核补丁是否真的生效」：prepare 成功不等于补丁贴上，必须回查源码里有没有成员。
 # 上一版就是「patch 报成功、成员没加上」，直到编译 HNAT 才炸，白跑一小时。
@@ -203,19 +212,16 @@ kernel_prepare() {
 	make target/linux/prepare V=s > "$KLOG" 2>&1
 }
 
-# 只负责判定 980/981 是否真的都被应用（不碰 prepare）
+# 只负责判定 980 是否真的应用（不碰 prepare）
 kernel_has_fwx() {
 	local kdir
 	kdir=$(ls -d build_dir/target-*/linux-mediatek_filogic/linux-6.6* 2>/dev/null | head -1)
 	[ -n "$kdir" ] || { echo "  找不到内核源码目录"; return 1; }
-	# 980：结构体成员
+	# 980 的两个 hunk 都要命中：结构体成员 + 分配处逐字段置零
 	grep -q "struct nf_fwx_data fwx_data;" "$kdir/include/net/netfilter/nf_conntrack.h" \
 		|| { echo "  980 未生效：nf_conntrack.h 里没有 fwx_data 成员"; return 1; }
-	# 981：新头文件 + user_ptr 初始化（两个都要，说明 981 也贴上了）
-	[ -f "$kdir/include/net/netfilter/nf_fwx_user.h" ] \
-		|| { echo "  981 未生效：缺 nf_fwx_user.h"; return 1; }
-	grep -q "ct->fwx_data.user_ptr = NULL;" "$kdir/net/netfilter/nf_conntrack_core.c" \
-		|| { echo "  981 未生效：core.c 里没有 user_ptr 初始化"; return 1; }
+	grep -q "ct->fwx_data.host = NULL;" "$kdir/net/netfilter/nf_conntrack_core.c" \
+		|| { echo "  980 未生效：core.c 里没有 fwx_data 初始化"; return 1; }
 	return 0
 }
 
@@ -225,8 +231,7 @@ if [ "$WITH_KMOD" = "1" ]; then
 	else
 		warn "内核补丁未生效 —— 降级为「无 DPI 内核模块」，继续出固件"
 		tail -20 "$KLOG" 2>/dev/null || true
-		rm -f target/linux/generic/hack-6.6/980-nf-contrack-support-fwx-data.patch \
-		      target/linux/generic/hack-6.6/981-add-fwx-user-ops.patch
+		rm -f target/linux/generic/hack-6.6/980-nf-contrack-support-fwx-data.patch
 		# hnat 判断依赖 980 的字段，补丁撤了它也必须还原
 		git checkout -- \
 			target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c \

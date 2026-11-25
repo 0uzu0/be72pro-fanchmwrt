@@ -152,8 +152,7 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 ├── scripts/build.sh                # 全部构建逻辑（本地也能跑）
 ├── defconfig/be72-fwx.config       # 上游 defconfig + fanchmwrt 24.10.4 叠加层
 ├── patches/                        # 上游 fanchmwrt-24.10.4 自带，原样使用
-│   ├── 980-nf-contrack-support-fwx-data.patch   # struct nf_fwx_data + nf_conn 成员
-│   └── 981-add-fwx-user-ops.patch               # nf_fwx_user 回调 + procfs 输出
+│   └── 980-nf-contrack-support-fwx-data.patch   # struct nf_fwx_data + nf_conn 成员
 ├── scripts/
 │   ├── build.sh
 │   └── patch_kernel_extras.py                   # 锚点式插入 hnat / fwx / fwx.init 改动
@@ -166,14 +165,19 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 |---|---|---|
 | MT798X-6.6-24.10 | `401e2ba1682314e48aabaa1af28d0e161aa58554` | 底座（RTL8372N / mt_wifi7 / HNAT） |
 | fanchmwrt | `9640f14b256065fd621de479b8d93762141504d3` | **24.10.4 分支**，fwx + fwxd + 主题 |
-| fanchmwrt-packages | `59c6b967e611a8c8562f3fd17eaa6aec9977f071` | 14 个界面包（该仓库只有 main） |
+| fanchmwrt-packages | `3c6ae7117843b46aa95b57d615874101d2db8700` | 14 个界面包，**与 fwxd 同期（2026-10-19）** |
 
 ---
 
 ## 五之二、哪些用上游补丁、哪些用锚点脚本
 
-**用上游补丁（不动上下文）**：`980` / `981`。这两个是 fanchmwrt 为 6.6 写的成品，编号刻意避开
-本树已有的 `930`，按文件名排序天然保证 980 先于 981（981 往 980 建的结构体里再加两个成员）。
+**用上游补丁（不动上下文）**：`980`。这是 fanchmwrt 为 6.6 写的成品，编号刻意避开本树已有的 `930`。
+
+上游同目录下还有 `981-add-fwx-user-ops.patch`，**本仓库不用**，因为它在这套组合里是死代码：
+`fwx.ko` 全模块没有一处引用 `nf_fwx_user_*` / `user_ptr` / `session_node`，而 `fwxd` 走 netlink 上报、
+不解析 `/proc/net/nf_conntrack`。多贴它只会多 4 个 hunk（含最易随内核小版本漂移的
+`nf_conntrack_standalone.c`），一旦命中失败整条内核路径就降级，所以宁可不要。
+将来若上游真用起了这套回调，把文件放回 `patches/` 并把 `build.sh` 第 3.3 步的 cp 改回循环即可。
 
 **用锚点脚本**：hnat 判断、fwx 清表、fwx.init 守卫。这三处本质是「往既有函数里插几行」，
 用 unified diff 时上游改一行就整体失效（实测过 `git apply` 能过、GNU patch 在 hunk 中间对不上）。
@@ -186,6 +190,21 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 - fwx.init：在 `rule_manager` 的 `procd_open_instance` 之前插入 `fwx.ko` 加载守卫
 
 脚本幂等（重复执行打印 `[skip]`），锚点命中次数不等于 1 时不动文件并返回 2。
+
+### 界面包必须与 fwxd 同期
+
+`fanchmwrt-packages` 只有 `main` 一条分支，但**不能直接取 HEAD**：界面包是通过 ubus
+`{"api": "..."}` 与 `fwxd` 对接的，新版会把接口改名/替换。实测拿 HEAD 配 24.10.4 的 `fwxd`：
+
+| 界面包 | 缺失接口 | 表现 |
+|---|---|---|
+| `luci-app-fwx-macfilter` | 9 个（`get_mac_filter_base/time/user`、`set_*`、`add/del_mac_filter_user`、`get_mf_status`） | 页面空白、保存无效 |
+| `luci-app-fwx-dashboard` | 2 个（`get_init_status` / `set_init_status`） | 首页状态异常 |
+| `luci-app-fwx-user` | 2 个（`get_parental_control_detail` / `get_system_base_info`） | 家长控制详情打不开 |
+
+所以 `PKG_REF` 锁到 `3c6ae71178`（2026-10-19，与 24.10.4 分支同一天）。核对方式：
+从各包 `luasrc/controller/*.lua` 提取 `.api = "xxx"`，与 `fwxd/src/fwx_ubus.c` 里出现的字符串取差集。
+改版本后建议重跑一次这个比对。
 
 ## 六、本地构建（可选）
 
