@@ -23,6 +23,7 @@ STAMP_FWX = "fwx_hnat_flush_mac"
 
 HNAT_REL = "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c"
 FWX_REL = "package/fcm/fwx/src/fwx_mac_filter.c"
+INIT_REL = "package/fcm/fwxd/files/fwx.init"
 
 # 建 PPE 表项的调用点（全文件唯一）
 HNAT_ANCHOR = (
@@ -131,8 +132,29 @@ static void fwx_hnat_flush_mac(const unsigned char *mac)
 #else
 static void fwx_hnat_flush_mac(const unsigned char *mac)
 {
+	(void)mac;
 }
 #endif
+"""
+
+
+# fwxd 的 init 脚本：没有 fwx.ko 时不要拉起 rule_manager。
+# 降级版（无内核模块）下 rule_manager 每 10s 轮询一次必然失败，会持续刷日志、
+# 也让界面上的规则状态错乱。用标记串做幂等判断。
+INIT_MARK = "fwx-guard"
+INIT_ANCHOR = (
+    '\tprocd_open_instance\n'
+    '\tprocd_set_param respawn 60 5 5\n'
+    '\tprocd_set_param stderr 1\n'
+    '\tprocd_set_param command "/usr/bin/rule_manager"\n'
+)
+
+INIT_INSERT = """\t# fwx-guard: fwx.ko 没加载成功就不要拉起 rule_manager
+\tif ! lsmod | grep -q "^fwx "; then
+\t\tlogger -t fwx "fwx.ko not loaded, skip rule_manager"
+\t\treturn 0
+\tfi
+
 """
 
 
@@ -213,6 +235,30 @@ def apply_fwx(root):
     return 0 if ok else 2
 
 
+def apply_init(root):
+    """降级版（无 fwx.ko）下别让 rule_manager 空转。"""
+    path = os.path.join(root, INIT_REL)
+    if not os.path.isfile(path):
+        print("  [!] 找不到 %s" % INIT_REL)
+        return 2
+
+    src = read(path)
+    if INIT_MARK in src:
+        print("  [skip] fwx.init 已含守卫")
+        return 0
+
+    if src.count(INIT_ANCHOR) != 1:
+        print("  [!] fwx.init 锚点命中 %d 次（期望 1 次），未修改" % src.count(INIT_ANCHOR))
+        return 2
+
+    src = src.replace(INIT_ANCHOR, INIT_INSERT + INIT_ANCHOR, 1)
+    write(path, src)
+
+    ok = INIT_MARK in read(path)
+    print("  [+] fwx.init: 无 fwx.ko 时跳过 rule_manager" if ok else "  [!] fwx.init 写入校验失败")
+    return 0 if ok else 2
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hnat", metavar="TREE")
@@ -224,6 +270,7 @@ def main():
         rc |= apply_hnat(a.hnat)
     if a.fwx:
         rc |= apply_fwx(a.fwx)
+        rc |= apply_init(a.fwx)
     sys.exit(0 if rc == 0 else 2)
 
 

@@ -87,11 +87,15 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 
 `fwx.ko` 要打一个改动 `struct nf_conn` 的内核补丁，6.6 上存在失败可能。仓库已做两层兜底：
 
-1. **内核补丁打不上** → 自动移除补丁、撤销 HNAT 补丁、解除界面包对 `kmod-fwx` 的依赖，继续出固件
+1. **内核补丁打不上** → 自动移除补丁、撤销 HNAT 补丁、解除界面包对 `kmod-fwx` 的依赖，重新 prepare 内核后继续出固件
    （此时有完整界面 + 后端 + 审计记录，但没有 DPI 拦截）
 2. **模块编译不过** → 手动触发时把 `with_kmod` 选 **no**，直接出「无内核模块」版
 
-构建日志在失败的 run 里以 `build-log-<run号>` artifact 上传，`kernel-prepare.log` 会直接写明哪个 hunk 没打上。
+降级路径会额外做两件事：`fwx.init` 里加守卫，`fwx.ko` 没加载时不拉起 `rule_manager`（否则它每 10 秒轮询一次必然失败、刷满日志）；`.config` 里关掉 `CONFIG_PACKAGE_kmod-fwx`。
+
+构建日志在失败的 run 里以 `build-log-<run号>` artifact 上传（取消的 run 也上传），`kernel-prepare.log` 会直接写明哪个 hunk 没打上；同时失败时会把 `error:` / `failed to build` 的关键行直接打到 Actions 控制台，不必先下 artifact。
+
+**配置校验是硬失败**：16 个必需包（`luci-compat`、`libfwx_common`、`fwxd`、13 个界面包，加 `kmod-fwx`）缺任何一个都会直接终止并列出缺的符号，不会静默产出缺功能的固件。
 
 ---
 
@@ -106,7 +110,7 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 │   └── 0001-net-netfilter-nf-conn-fwx-fields.patch   # struct nf_conn 加 fwx_data
 ├── scripts/
 │   ├── build.sh
-│   └── patch_kernel_extras.py                        # 锚点式插入 0002/0003 的改动
+│   └── patch_kernel_extras.py                        # 锚点式插入 hnat / fwx / fwx.init 改动
 └── README.md
 ```
 
@@ -127,9 +131,11 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 所以改成 `scripts/patch_kernel_extras.py` 做锚点插入：
 
 - hnat：在 `skb_to_hnat_info(skb, out, entry, &hw_path);` 之前插入 `ct->fwx_data.action` 判断（该调用点全文件唯一）
-- fwx：辅助函数插到最后一个 `#include` 之后；调用点插到 `fwx_add_mac_node(...)` + `mac_filter_write_unlock();` 之后
+- fwx：辅助函数插到最后一个 `#include` 之后；调用点插到 `fwx_add_mac_node(...)` + `mac_filter_write_unlock();` 之后；
+  规则修改路径按 `fwx_api_mod_mac_filter_rule` 收尾处插入清表（UI 实际走这条路，`fwx_add_mac_to_rule` 全模块无人调用）
+- fwx.init：在 `rule_manager` 的 `procd_open_instance` 之前插入 `fwx.ko` 加载守卫
 
-脚本幂等（重复执行打印 `[skip]`），锚点找不到时只告警、不改文件，并在写入后回读校验。
+脚本幂等（重复执行打印 `[skip]`），锚点命中次数不等于 1 时不动文件并返回 2。
 
 ## 六、本地构建（可选）
 

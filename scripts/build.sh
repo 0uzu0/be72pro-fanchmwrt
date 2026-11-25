@@ -49,7 +49,14 @@ clone_at() {
 		git -C "$dir" fetch -q --depth 1 origin
 	fi
 	git -C "$dir" checkout -q FETCH_HEAD
-	echo "  $(basename "$dir") @ $(git -C "$dir" rev-parse --short HEAD)"
+	# 明确核对是否落在 pin 上：补丁锚点是按固定 commit 验过的，
+	# 静默漂到别的 commit 会让锚点失效（表现得像「补丁写错了」）。
+	local got
+	got=$(git -C "$dir" rev-parse HEAD)
+	if [ ${#ref} -eq 40 ] && [ "$got" != "$ref" ]; then
+		warn "$(basename "$dir") 未落在 pin 上：期望 ${ref:0:7}，实际 ${got:0:7}"
+	fi
+	echo "  $(basename "$dir") @ ${got:0:7}"
 }
 clone_at "$RJ"  "$RJ_REPO"  "$RJ_REF"
 clone_at "$FCM" "$FCM_REPO" "$FCM_REF"
@@ -83,9 +90,9 @@ cd "$RJ"
 # （实测出现过 git apply 能过、GNU patch 在 hunk 中间对不上的情况）。
 # 脚本幂等：已插入会打印 [skip]，锚点找不到返回非 0 但不改文件。
 
-# 3.1 fwx 侧：拉黑即清 PPE 表项（与内核无关，总是尝试）
+# 3.1 fwx 侧：拉黑即清 PPE 表项 + init 守卫（与内核无关，总是尝试）
 python3 "$ROOT/scripts/patch_kernel_extras.py" --fwx "$RJ" \
-	|| warn "fwx 清表调用未插入 —— 仅影响「拉黑后立即断开」"
+	|| warn "fwx 侧改动未全部插入 —— 只影响「拉黑后立即断开」与降级版的 init 行为"
 
 if [ "$WITH_KMOD" = "1" ]; then
 	# 3.2 hnat 侧：被 DPI 判死的流不进 PPE
@@ -117,22 +124,60 @@ if [ "$WITH_KMOD" = "0" ]; then
 fi
 make defconfig >/dev/null
 
-check_cfg() {
-	grep -q "^$1=y" .config && echo "  ✔ $1" || warn "缺少 $1（依赖未满足，构建可能缺功能）"
+# 这些包缺任何一个都意味着「界面/后端缺一块」，属于静默功能缺失。
+# 上一版只 warn 就继续，等于把缺功能的固件当成功产物发出去——改为直接失败。
+require_cfg() {
+	local missing=()
+	local sym
+	for sym in "$@"; do
+		grep -q "^${sym}=y" .config || missing+=("$sym")
+	done
+	if [ ${#missing[@]} -gt 0 ]; then
+		echo "!! 以下软件包未被 make defconfig 选中（依赖不满足，已被静默丢弃）："
+		printf '     %s\n' "${missing[@]}"
+		echo "   排查：看该包 Makefile 的 DEPENDS；在本树里缺少某个 kmod/库时就会这样。"
+		exit 1
+	fi
+	echo "  ✔ 必需软件包全部选中（共 $# 项）"
 }
-check_cfg CONFIG_PACKAGE_luci-compat
-check_cfg CONFIG_PACKAGE_luci-app-fwx-appfilter
-check_cfg CONFIG_PACKAGE_luci-app-fwx-user
-check_cfg CONFIG_PACKAGE_fwxd
-if [ "$WITH_KMOD" = "1" ]; then check_cfg CONFIG_PACKAGE_kmod-fwx; fi
+
+REQUIRED_SYMS=(
+	CONFIG_PACKAGE_luci-compat
+	CONFIG_PACKAGE_libfwx_common
+	CONFIG_PACKAGE_fwxd
+	CONFIG_PACKAGE_luci-app-fwx-resources
+	CONFIG_PACKAGE_luci-app-fwx-dashboard
+	CONFIG_PACKAGE_luci-app-fwx-dashboard-setting
+	CONFIG_PACKAGE_luci-app-fwx-user
+	CONFIG_PACKAGE_luci-app-fwx-user-record
+	CONFIG_PACKAGE_luci-app-fwx-appfilter
+	CONFIG_PACKAGE_luci-app-fwx-record
+	CONFIG_PACKAGE_luci-app-fwx-record-whitelist
+	CONFIG_PACKAGE_luci-app-fwx-macfilter
+	CONFIG_PACKAGE_luci-app-fwx-mac-blacklist
+	CONFIG_PACKAGE_luci-app-fwx-session-stat
+	CONFIG_PACKAGE_luci-app-fwx-traffic-stat
+	CONFIG_PACKAGE_luci-app-fwx-feature
+)
+if [ "$WITH_KMOD" = "1" ]; then
+	REQUIRED_SYMS+=(CONFIG_PACKAGE_kmod-fwx)
+fi
+require_cfg "${REQUIRED_SYMS[@]}"
 
 # ---------------------------------------------------------------- 6. 内核
 log "6/8 内核准备（含 0001 应用校验）"
 
-# 判定内核是否真正就绪：不仅 prepare 要成功，还要确认 nf_conn 里真的有 fwx_data。
+# 判定「内核补丁是否真的生效」：prepare 成功不等于补丁贴上，必须回查源码里有没有成员。
 # 上一版就是「patch 报成功、成员没加上」，直到编译 HNAT 才炸，白跑一小时。
-kernel_ready() {
-	make target/linux/prepare V=s > "$WORKDIR/kernel-prepare.log" 2>&1 || return 1
+KLOG="$WORKDIR/kernel-prepare.log"
+
+# 只负责把内核源码解压 + 打补丁到 build_dir（失败返回非 0）
+kernel_prepare() {
+	make target/linux/prepare V=s > "$KLOG" 2>&1
+}
+
+# 只负责判定 0001 是否生效（不碰 prepare）
+kernel_has_fwx() {
 	local kdir
 	kdir=$(ls -d build_dir/target-*/linux-mediatek_filogic/linux-6.6* 2>/dev/null | head -1)
 	[ -n "$kdir" ] || { echo "  找不到内核源码目录"; return 1; }
@@ -144,11 +189,11 @@ kernel_ready() {
 }
 
 if [ "$WITH_KMOD" = "1" ]; then
-	if kernel_ready; then
+	if kernel_prepare && kernel_has_fwx; then
 		echo "  ✔ 内核已就绪：nf_conn.fwx_data 存在"
 	else
 		warn "内核补丁未生效 —— 降级为「无 DPI 内核模块」，继续出固件"
-		tail -20 "$WORKDIR/kernel-prepare.log" 2>/dev/null || true
+		tail -20 "$KLOG" 2>/dev/null || true
 		rm -f target/linux/generic/hack-6.6/950-fwx-ct-fields.patch
 		# 0002 依赖 0001 的字段，必须一起撤销
 		git checkout -- \
@@ -158,19 +203,46 @@ if [ "$WITH_KMOD" = "1" ]; then
 		sed -i 's/^CONFIG_PACKAGE_kmod-fwx=y/# CONFIG_PACKAGE_kmod-fwx is not set/' .config
 		make target/linux/clean >/dev/null 2>&1 || true
 		make defconfig >/dev/null
-		kernel_ready || { echo "!! 去掉 fwx 补丁后内核仍无法准备，终止"; tail -40 "$WORKDIR/kernel-prepare.log"; exit 1; }
+		# 降级后只能要求「内核还能正常准备」，绝不能再跑 kernel_has_fwx——
+		# 补丁已删，它必然为假，会把降级路径自己否掉（上一版的 bug）。
+		if ! kernel_prepare; then
+			echo "!! 去掉 fwx 补丁后内核仍无法准备，终止"
+			tail -40 "$KLOG"
+			exit 1
+		fi
+		echo "  ✔ 已回退内核补丁，内核可正常准备"
 		WITH_KMOD=0
 	fi
 else
-	echo "  WITH_KMOD=0，跳过内核校验"
-	make target/linux/prepare V=s > "$WORKDIR/kernel-prepare.log" 2>&1
+	echo "  WITH_KMOD=0，只做内核准备"
+	if ! kernel_prepare; then
+		echo "!! 内核准备失败，终止"
+		tail -40 "$KLOG"
+		exit 1
+	fi
 fi
 
 # ---------------------------------------------------------------- 7. 编译
 log "7/8 下载 + 编译（-j$JOBS，这一步最久）"
 make -j"$JOBS" download >/dev/null 2>&1 \
 	|| warn "download 阶段有失败项，继续编译（编译时会重试）"
+
+# 失败时把日志里的关键错误直接打到 CI 控制台，省得每次都要下载 artifact 才能定位。
+set +e
 make -j"$JOBS" V=s 2>&1 | tee "$WORKDIR/build.log"
+BUILD_RC=${PIPESTATUS[0]}
+set -e
+if [ "$BUILD_RC" -ne 0 ]; then
+	echo
+	warn "编译失败（make 退出码 $BUILD_RC），日志关键行："
+	PAT='error:|Error [0-9]+|failed to build|\*\*\* |No rule to make'
+	if grep -qE "$PAT" "$WORKDIR/build.log"; then
+		grep -nE "$PAT" "$WORKDIR/build.log" | tail -30
+	else
+		tail -40 "$WORKDIR/build.log"
+	fi
+	exit "$BUILD_RC"
+fi
 
 # ---------------------------------------------------------------- 8. 产物
 log "8/8 产物"
