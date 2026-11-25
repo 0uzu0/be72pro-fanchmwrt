@@ -66,25 +66,30 @@ FWX_HELPER = """#include <linux/module.h>
 /*
  * hnat 通过 EXPORT_SYMBOL 导出 ppe_del_entry_by_mac（按 MAC 清 PPE 表项）。
  *
- * 这里用 symbol_get 动态解析，而不是 extern 直接引用：mtkhnat 在本树里可能
- * 被编成模块，直接引用会让 OpenWrt 依赖扫描报
+ * 这里用 __symbol_get 动态解析，而不是 extern 直接引用：直接调用这个函数指针
+ * 会让 fwx.ko 出现未定义符号，OpenWrt 依赖扫描就会报
  *   "Package kmod-fwx is missing dependencies ... mtkhnat.ko"
- * 而且没有对应的 kmod 包可以用 DEPENDS 补。
+ * 而本树没有对应的 kmod 包可以用 DEPENDS 补（mtkhnat 编在以太网驱动里）。
  *
- * symbol_get 解析不到时返回 NULL，此时退化为「不清表、等硬件表项自然老化」，
- * 不影响其余功能。
+ * 解析不到时返回 NULL，此时退化为「不清表、等硬件表项自然老化」，不影响其他功能。
  */
 #ifdef CONFIG_MODULES
 static void fwx_hnat_flush_mac(const unsigned char *mac)
 {
 	static int (**del_by_mac)(unsigned char *mac);
-	int (**p)(unsigned char *mac);
 
 	if (!del_by_mac) {
-		p = (int (**)(unsigned char *mac))symbol_get(ppe_del_entry_by_mac);
-		if (!p)
+		/*
+		 * 这里必须直接调 __symbol_get("名字")，不能用 symbol_get(x)：
+		 * 6.6 的 symbol_get 宏是 ((typeof(&x))(__symbol_get(__stringify(x))))，
+		 * typeof(&x) 要求符号先有声明；而一旦 extern 声明并在别处直接调用，
+		 * 又会让 fwx.ko 出现未定义符号、被 OpenWrt 判成依赖 mtkhnat.ko。
+		 * 直接传字符串两头都不沾。
+		 */
+		del_by_mac = (int (**)(unsigned char *mac))
+			__symbol_get("ppe_del_entry_by_mac");
+		if (!del_by_mac)
 			return;
-		del_by_mac = p;
 	}
 
 	if (*del_by_mac)
