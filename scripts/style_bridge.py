@@ -92,18 +92,30 @@ h1, h2 { color: var(--text-color-highest, #111); }
 # 含 .fwx-form-card 的页面 —— 浏览器不支持 :has() 时该条规则整体失效，退化成
 # 主题原样，不会把 fwx 页面弄坏。
 THEME_BRIDGE = MARK + """
-/* B. 全站视觉统一：把标准 LuCI 页面（网络/无线/系统/防火墙/流量整形/网络加速）
-   对齐到 fwx 自有页面的规范。
+/* B. 按 fwx 页面的骨架重写标准 LuCI 页面的表现层。
 
-   差异来源（逐个核过 cascade.css）：
-     · 区块  主题只有 fieldset 的 margin/padding，没有边框 → fwx 是 .fwx-form-card
-     · 标题  legend 19.5px                                  → fwx 是 .form-title 18px
-     · 表格  单元格 border-top 用 --border-color-medium       → fwx 用 --border-color-low
-     · 按钮  描边风（border 取主色、文字同色）                → fwx 是实心填充白字
+   骨架参照 luci-app-fwx-appfilter/luasrc/view/appfilter/advance.htm：
+     <div class="fwx-form-card">
+       <div class="form-title">…</div>
+       <div class="form-desc">…</div>
+       <div class="form-row"><label class="form-label">…</label><控件/></div>
+       <div class="form-row">按钮组（右对齐）</div>
+     </div>
 
-   刻意不动输入框和普通按钮的底色（主题已完整覆盖，改了就是回归）。
-   也刻意不给 .cbi-map 限宽：fwx 页面全是窄表单，但标准页有宽表格
-   （无线客户端列表、防火墙规则），限 780 会挤成横向滚动。 */
+   与 LuCI 的映射（据此逐条对齐，不是凭空配色）：
+     .fwx-form-card  <-> fieldset.cbi-section
+     .form-title     <-> legend
+     .form-desc      <-> .cbi-section-descr
+     .form-row       <-> .cbi-value          (.form-row: flex / mb10 / gap10)
+     .form-label     <-> .cbi-value-title    (.form-label: width 140)
+     .switch         <-> input[type=checkbox] (40x20，滑块 16，位移 20)
+     右下按钮组       <-> .cbi-page-actions
+     .common-table   <-> .table
+
+   不做的事：① 不给 .cbi-map 限宽——标准页有宽表格（无线客户端列表、防火墙规则），
+   限 780 会挤成横向滚动；② 不动输入框与普通按钮底色——主题已完整覆盖。 */
+
+/* 1. 卡片：.fwx-form-card = 1px 描边 / 8 圆角 / 16 内距 / 白底 */
 fieldset.cbi-section,
 .cbi-section-node {
 	border: 1px solid var(--border-color-low, #e5e7eb);
@@ -112,6 +124,8 @@ fieldset.cbi-section,
 	margin-bottom: 16px;
 	background: var(--background-color-high, #fff);
 }
+
+/* 2. 标题与说明：.form-title 18px / .form-desc 13px 灰 */
 fieldset.cbi-section legend,
 .cbi-section-node > h3 {
 	font-size: 18px;
@@ -119,8 +133,61 @@ fieldset.cbi-section legend,
 	padding-top: 0;
 	color: var(--text-color-highest, #111);
 }
+.cbi-section-descr {
+	font-size: 13px;
+	color: var(--text-color-medium, #6b7280);
+	margin-bottom: 12px;
+}
 
-/* 表格：边框色与表头底色对齐 fwx 的 .common-table */
+/* 3. 字段行：.form-row(flex/mb10/gap10) + .form-label(width 140) */
+.cbi-value {
+	margin-bottom: 10px;
+	gap: 10px;
+}
+.cbi-value label.cbi-value-title,
+.cbi-value > .cbi-value-title {
+	flex: 0 0 140px;
+	width: 140px;
+	padding-top: 6px;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-color-high, #333);
+}
+.cbi-value-field { margin-left: 0; }
+
+/* 4. 开关：把 checkbox 画成 fwx 的 .switch（40x20 / 滑块 16 / 选中位移 20） */
+.cbi-value-field input[type="checkbox"] {
+	-webkit-appearance: none;
+	appearance: none;
+	flex: 0 0 auto;
+	width: 40px;
+	height: 20px;
+	margin: 0;
+	border: none;
+	border-radius: 10px;
+	background: var(--border-color-medium, #ccc);
+	position: relative;
+	cursor: pointer;
+	transition: background .2s;
+}
+.cbi-value-field input[type="checkbox"]::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #fff;
+	transition: transform .2s;
+}
+.cbi-value-field input[type="checkbox"]:checked {
+	background: var(--primary-color-high, #1976d2);
+}
+.cbi-value-field input[type="checkbox"]:checked::after { transform: translateX(20px); }
+.cbi-value-field input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 5. 表格：对齐 .common-table 的边框与表头 */
 .table .td,
 .table .th { border-top-color: var(--border-color-low, #e5e7eb); }
 .table .tr:first-child .th {
@@ -128,7 +195,7 @@ fieldset.cbi-section legend,
 	color: var(--text-color-highest, #111);
 }
 
-/* 主操作按钮：实心填充，对齐 fwx 的 .submit-button */
+/* 6. 按钮：主操作实心、危险操作实心红，与 .submit-button / .btn-delete 一致 */
 .cbi-button-apply,
 .cbi-button-action,
 .cbi-button-save,
@@ -139,26 +206,27 @@ fieldset.cbi-section legend,
 	background: var(--primary-color-high, #1976d2);
 	border-color: var(--primary-color-high, #1976d2);
 }
-.cbi-button-apply:hover,
-.cbi-button-action:hover,
-.cbi-button-save:hover,
-.cbi-button-positive:hover,
-.cbi-button-add:hover,
-.cbi-button-fieldadd:hover { filter: brightness(0.92); }
-
-/* 危险操作：实心红，对齐 fwx 的 .btn-delete。
-   reset（取消/重置）不在此列 —— 它不是破坏性操作，保持主题的描边样式。 */
 .cbi-button-negative,
 .cbi-button-remove {
 	color: #fff;
 	background: var(--error-color-high, #e8210d);
 	border-color: var(--error-color-high, #e8210d);
 }
+.cbi-button-apply:hover,
+.cbi-button-action:hover,
+.cbi-button-save:hover,
+.cbi-button-positive:hover,
+.cbi-button-add:hover,
+.cbi-button-fieldadd:hover,
 .cbi-button-negative:hover,
 .cbi-button-remove:hover { filter: brightness(0.92); }
 
-/* 操作条与卡片收尾对齐 */
+/* 7. 操作条：右下对齐，与 fwx 页面的按钮组一致 */
 .cbi-page-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 8px;
 	border-top: 1px solid var(--border-color-low, #e5e7eb);
 	padding-top: 12px;
 }

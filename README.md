@@ -135,20 +135,37 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 | 层 | 做法 | 默认 |
 |---|---|---|
 | **A. fwx 页面跟随主题变量** | fwx 的 `common.css` 里是硬编码色值（`#2885e8` 蓝按钮、`green` 描边、`#ff4444` 删除键、白底卡片），不跟主题、深色模式下突兀。构建时追加 override 换成主题变量（`--primary-color-high` / `--error-color-high` / `--border-color-low` …，均带兜底），14 个页面立刻跟随换色与深浅色 | **开** |
-| **B. 标准页对齐 fwx 规范** | 区块卡片化（16 内距 / 1px 描边 / 8 圆角）、标题 18px、表格边框与表头底色、主按钮改实心填充白字、危险按钮实心红 | **开**（`STYLE_CARDS=0` 关） |
+| **B. 标准页按 fwx 骨架重写** | 卡片（1px/8px/16）、标题 18px、字段行 `mb10+gap10`、标签宽 140、checkbox 画成 40×20 滑块、表格边框与表头、主按钮实心、操作条右下对齐 | **开**（`STYLE_CARDS=0` 关） |
 | **C. 重写锐捷页面** | 不需要 | — |
 
 ### B 层具体改了什么，以及刻意没改什么
 
 改（都是为了让标准页和 fwx 页面一致）：
 
-| 元素 | 主题原样 | 统一后 |
-|---|---|---|
-| 区块 | `fieldset` 只有 margin/padding，靠分隔线连排 | 1px 描边 + 8 圆角 + 16 内距的白卡 |
-| 区块标题 | `legend` 19.5px | 18px（同 `.form-title`） |
-| 表格 | 单元格 `border-top: --border-color-medium`，表头无底色 | 边框 `--border-color-low`，表头 `--background-color-medium`（同 `.common-table`） |
-| 主按钮 | 描边风（边框取主色、文字同色） | 实心填充 + 白字（同 `.submit-button`） |
-| 危险按钮 | 描边风 | 实心红（同 `.btn-delete`） |
+参照物是 fwx 的真实页面骨架（`luci-app-fwx-appfilter/.../advance.htm`）：
+
+```
+<div class="fwx-form-card">
+  <div class="form-title">…</div>
+  <div class="form-desc">…</div>
+  <div class="form-row"><label class="form-label">…</label><控件/></div>
+  <div class="form-row">按钮组（右对齐）</div>
+</div>
+```
+
+映射到 LuCI 后逐项对齐：
+
+| 元素 | fwx 骨架 | 主题原样 | 统一后 |
+|---|---|---|---|
+| 区块 | `.fwx-form-card` | `fieldset` 只有 margin/padding | 1px 描边 + 8 圆角 + 16 内距白卡 |
+| 标题 | `.form-title` 18px | `legend` 19.5px | 18px |
+| 字段行 | `.form-row` `mb10/gap10` | `.cbi-value` `mb18` | `mb10 + gap10` |
+| 标签宽 | `.form-label` 140px | `.cbi-value-title` 180px | 140px |
+| 开关 | `.switch` 40×20 滑块 | 原生 checkbox | **CSS 画成 40×20 滑块**（滑块 16，位移 20） |
+| 表格 | `.common-table` | `border-top: --border-color-medium` | `--border-color-low` + 表头 `--background-color-medium` |
+| 主按钮 | `.submit-button` 实心 | 描边风 | 实心填充 + 白字 |
+| 危险按钮 | `.btn-delete` 实心红 | 描边风 | 实心红 |
+| 操作条 | 卡片内右下 | 底部通栏 | 右下对齐 + 8px 间距 |
 
 **刻意不改**：
 

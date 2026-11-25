@@ -103,9 +103,11 @@ python3 "$ROOT/scripts/check_api.py" "$RJ" \
 python3 "$ROOT/scripts/style_bridge.py" --fwx "$RJ" \
 	|| warn "fwx 样式桥接未应用 —— 深色模式下 fwx 页面颜色可能突兀"
 
-# 样式桥接 B（默认开启）：全站视觉统一。
-# 把标准 LuCI 页面对齐到 fwx 页面的规范 —— 区块卡片化（16 内距 / 1px 描边 /
-# 8 圆角）、标题 18px、表格边框与表头底色、主按钮改实心填充。
+# 样式桥接 B（默认开启）：按 fwx 页面骨架重写标准页的表现层。
+# 骨架取自 fwx 真实页面（.fwx-form-card / .form-title / .form-row / .switch），
+# 逐条映射到 LuCI 的 .cbi-section / legend / .cbi-value / checkbox：
+#   卡片(1px/8px/16)、标题 18px、字段行 mb10+gap10、标签宽 140、
+#   checkbox 画成 40x20 滑块、表格边框与表头、主按钮实心、操作条右下对齐。
 # 不做的事：① 不给 .cbi-map 限宽（标准页有宽表格，限 780 会挤成横向滚动）；
 #           ② 不动输入框与普通按钮底色（主题已完整覆盖，改了是回归）。
 # 锐捷保留的页面（wireless-mtk / turboacc / eqos）本就是纯 LuCI 表单 API +
