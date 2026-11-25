@@ -103,9 +103,10 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 ├── scripts/build.sh                # 全部构建逻辑（本地也能跑）
 ├── defconfig/be72-fwx.config       # 上游 defconfig + fwx 叠加层
 ├── patches/
-│   ├── 0001-net-netfilter-nf-conn-fwx-fields.patch   # struct nf_conn 加 fwx_data
-│   ├── 0002-hnat-skip-fwx-dropped-flows.patch        # 被判 drop 的流不进 PPE
-│   └── 0003-fwx-flush-hnat-entries.patch             # 拉黑即清 PPE 表项
+│   └── 0001-net-netfilter-nf-conn-fwx-fields.patch   # struct nf_conn 加 fwx_data
+├── scripts/
+│   ├── build.sh
+│   └── patch_kernel_extras.py                        # 锚点式插入 0002/0003 的改动
 └── README.md
 ```
 
@@ -118,6 +119,17 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 | fanchmwrt-packages | `59c6b967e611a8c8562f3fd17eaa6aec9977f071` |
 
 ---
+
+## 五之二、为什么 0002/0003 不用 patch 文件
+
+这两处改动本质是「往既有函数里插几行」。用 unified diff 时，上游把函数体改一行（加日志、调锁、改缩进）就会 hunk 失败；实测还出现过 `git apply` 能过、GNU patch 在 hunk 中间对不上的情况。
+
+所以改成 `scripts/patch_kernel_extras.py` 做锚点插入：
+
+- hnat：在 `skb_to_hnat_info(skb, out, entry, &hw_path);` 之前插入 `ct->fwx_data.action` 判断（该调用点全文件唯一）
+- fwx：辅助函数插到最后一个 `#include` 之后；调用点插到 `fwx_add_mac_node(...)` + `mac_filter_write_unlock();` 之后
+
+脚本幂等（重复执行打印 `[skip]`），锚点找不到时只告警、不改文件，并在写入后回读校验。
 
 ## 六、本地构建（可选）
 

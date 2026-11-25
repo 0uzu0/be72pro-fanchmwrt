@@ -78,37 +78,20 @@ log "3/8 应用补丁"
 cd "$RJ"
 [ -f ./scripts/feeds ] || { echo "!! $RJ 不是有效源码树（缺 scripts/feeds）"; exit 1; }
 
-# apply_patch <工作目录> <补丁> <描述>
-#   统一用 --batch 避免 CI 里弹交互提示；失败只告警，不中断整次构建
-apply_patch() {
-	local dir="$1" pf="$2" desc="$3"
-	local out
-	if out=$( cd "$dir" && patch -p1 -N --batch --forward < "$pf" 2>&1 ); then
-		echo "  [+] $desc"
-		return 0
-	fi
-	warn "$desc 应用失败（跳过，功能降级）"
-	printf '%s\n' "$out" | tail -6
-	return 1
-}
+# 说明：0002 / 0003 不用 unified diff，改用锚点插入。
+# 原因：这两处都是「在某条确定语句后插几行」，用 diff 时上游改一行就整体失效
+# （实测出现过 git apply 能过、GNU patch 在 hunk 中间对不上的情况）。
+# 脚本幂等：已插入会打印 [skip]，锚点找不到返回非 0 但不改文件。
 
-# 3.1 HNAT 方案三：fwx 拉黑即清 PPE 表项（补丁路径相对 package/fcm/fwx）
-if grep -q "ppe_del_entry_by_mac" package/fcm/fwx/src/fwx_mac_filter.c 2>/dev/null; then
-	echo "  [skip] 0003 已应用"
-else
-	apply_patch "package/fcm/fwx" "$ROOT/patches/0003-fwx-flush-hnat-entries.patch" \
-		"0003 拉黑即清 PPE 表项" || true
-fi
+# 3.1 fwx 侧：拉黑即清 PPE 表项（与内核无关，总是尝试）
+python3 "$ROOT/scripts/patch_kernel_extras.py" --fwx "$RJ" \
+	|| warn "fwx 清表调用未插入 —— 仅影响「拉黑后立即断开」"
 
 if [ "$WITH_KMOD" = "1" ]; then
-	# 3.2 HNAT 方案二：被判 drop 的流不进 PPE
-	if grep -q "fwx_data" target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c; then
-		echo "  [skip] 0002 已应用"
-	else
-		apply_patch "target/linux/mediatek/files-6.6" \
-			"$ROOT/patches/0002-hnat-skip-fwx-dropped-flows.patch" \
-			"0002 DPI 判死的流不进 PPE" || warn "  继续构建，但被拦连接可能仍被硬件加速"
-	fi
+	# 3.2 hnat 侧：被 DPI 判死的流不进 PPE
+	#     若失败只是失去该优化，不影响编译（hnat 保持原样）
+	python3 "$ROOT/scripts/patch_kernel_extras.py" --hnat "$RJ" \
+		|| warn "hnat 补丁未应用 —— 被拦连接可能仍会被硬件加速"
 
 	# 3.3 内核：struct nf_conn 增加 fwx_data
 	mkdir -p target/linux/generic/hack-6.6
@@ -168,8 +151,9 @@ if [ "$WITH_KMOD" = "1" ]; then
 		tail -20 "$WORKDIR/kernel-prepare.log" 2>/dev/null || true
 		rm -f target/linux/generic/hack-6.6/950-fwx-ct-fields.patch
 		# 0002 依赖 0001 的字段，必须一起撤销
-		( cd target/linux/mediatek/files-6.6 && \
-		  patch -p1 -R --forward < "$ROOT/patches/0002-hnat-skip-fwx-dropped-flows.patch" ) || true
+		git checkout -- \
+			target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c \
+			|| warn "hnat 还原失败，需手工检查"
 		sed -i 's/+kmod-fwx //g' package/luci-app-fwx-*/Makefile || true
 		sed -i 's/^CONFIG_PACKAGE_kmod-fwx=y/# CONFIG_PACKAGE_kmod-fwx is not set/' .config
 		make target/linux/clean >/dev/null 2>&1 || true
