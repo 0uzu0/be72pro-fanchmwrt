@@ -3,14 +3,18 @@
 给 **锐捷 RG-BE72 Pro（MT7988D）** 构建带 FanchmWrt 界面与 DPI 管控的固件。
 
 底座用 `RuijieNetworksCommunity/MT798X-6.6-24.10`（保留 RTL8372N 双驱动、MT7992 私有 WiFi、HNAT），
-只叠加 fanchmwrt 的 `fwx` 技术栈：
+**整套 fwx 技术栈取 `fanchmwrt-24.10.4`**（与底座同代，kernel 6.6 原生）：
 
 | 能力 | 组成 |
 |---|---|
-| 界面 | `luci-theme-fanchmwrt` 风格页面（本仓库取 13 个 `luci-app-fwx-*`） |
-| 后端 | `fwxd`（ubus 方法 `fwx.common`）+ `rule_manager.lua` |
+| 界面 | `luci-theme-fanchmwrt`（ucode/JS 主题，接管侧边栏与登录页）+ 14 个 `luci-app-fwx-*` |
+| 后端 | `fwxd`（ubus 方法 `fwx.common`）+ `rule_manager` |
 | DPI | `fwx.ko`（netfilter hook @ conntrack+1）+ `feature.cfg` 特征库 |
 | 审计/管控 | 应用过滤、上网记录、MAC 黑白名单、终端权限 |
+
+> **为什么必须锁 24.10.4**：25.12.x 的 `struct nf_fwx_data` 里 `host` 是数组，24.10.4 的 `host` 是**指针**
+> （见上游 `980-nf-contrack-support-fwx-data.patch`）。两版混用会让 `fwx.ko` 把内核指针当字符串解引用，
+> 直接崩内核。换版本必须整包换，不能只换 UI。
 
 ---
 
@@ -95,7 +99,7 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 
 构建日志在失败的 run 里以 `build-log-<run号>` artifact 上传（取消的 run 也上传），`kernel-prepare.log` 会直接写明哪个 hunk 没打上；同时失败时会把 `error:` / `failed to build` 的关键行直接打到 Actions 控制台，不必先下 artifact。
 
-**配置校验是硬失败**：16 个必需包（`luci-compat`、`libfwx_common`、`fwxd`、13 个界面包，加 `kmod-fwx`）缺任何一个都会直接终止并列出缺的符号，不会静默产出缺功能的固件。
+**配置校验是硬失败**：19 个必须选中的符号（`luci-compat`、`luci-theme-fanchmwrt`、`zh_Hans` 语言包、`libfwx_common`、`fwxd`、14 个界面包，kmod 模式下再加 `kmod-fwx`）缺任何一个都会直接终止并列出缺的符号，不会静默产出缺功能的固件。
 
 ---
 
@@ -105,34 +109,39 @@ sysupgrade -n -v /tmp/fw.bin      # -n 必须加：mtwifi/网络配置不兼容
 .
 ├── .github/workflows/build.yml     # Actions：拉源码 → 打补丁 → 编译 → 发 Release
 ├── scripts/build.sh                # 全部构建逻辑（本地也能跑）
-├── defconfig/be72-fwx.config       # 上游 defconfig + fwx 叠加层
-├── patches/
-│   └── 0001-net-netfilter-nf-conn-fwx-fields.patch   # struct nf_conn 加 fwx_data
+├── defconfig/be72-fwx.config       # 上游 defconfig + fanchmwrt 24.10.4 叠加层
+├── patches/                        # 上游 fanchmwrt-24.10.4 自带，原样使用
+│   ├── 980-nf-contrack-support-fwx-data.patch   # struct nf_fwx_data + nf_conn 成员
+│   └── 981-add-fwx-user-ops.patch               # nf_fwx_user 回调 + procfs 输出
 ├── scripts/
 │   ├── build.sh
-│   └── patch_kernel_extras.py                        # 锚点式插入 hnat / fwx / fwx.init 改动
+│   └── patch_kernel_extras.py                   # 锚点式插入 hnat / fwx / fwx.init 改动
 └── README.md
 ```
 
 版本全部 pin 到 commit：
 
-| 来源 | commit |
-|---|---|
-| MT798X-6.6-24.10 | `401e2ba1682314e48aabaa1af28d0e161aa58554` |
-| fanchmwrt | `11b65ca6a58dc7fad27eef196b391789195393b8` |
-| fanchmwrt-packages | `59c6b967e611a8c8562f3fd17eaa6aec9977f071` |
+| 来源 | commit | 说明 |
+|---|---|---|
+| MT798X-6.6-24.10 | `401e2ba1682314e48aabaa1af28d0e161aa58554` | 底座（RTL8372N / mt_wifi7 / HNAT） |
+| fanchmwrt | `9640f14b256065fd621de479b8d93762141504d3` | **24.10.4 分支**，fwx + fwxd + 主题 |
+| fanchmwrt-packages | `59c6b967e611a8c8562f3fd17eaa6aec9977f071` | 14 个界面包（该仓库只有 main） |
 
 ---
 
-## 五之二、为什么 0002/0003 不用 patch 文件
+## 五之二、哪些用上游补丁、哪些用锚点脚本
 
-这两处改动本质是「往既有函数里插几行」。用 unified diff 时，上游把函数体改一行（加日志、调锁、改缩进）就会 hunk 失败；实测还出现过 `git apply` 能过、GNU patch 在 hunk 中间对不上的情况。
+**用上游补丁（不动上下文）**：`980` / `981`。这两个是 fanchmwrt 为 6.6 写的成品，编号刻意避开
+本树已有的 `930`，按文件名排序天然保证 980 先于 981（981 往 980 建的结构体里再加两个成员）。
 
-所以改成 `scripts/patch_kernel_extras.py` 做锚点插入：
+**用锚点脚本**：hnat 判断、fwx 清表、fwx.init 守卫。这三处本质是「往既有函数里插几行」，
+用 unified diff 时上游改一行就整体失效（实测过 `git apply` 能过、GNU patch 在 hunk 中间对不上）。
+
+`scripts/patch_kernel_extras.py` 的落点：
 
 - hnat：在 `skb_to_hnat_info(skb, out, entry, &hw_path);` 之前插入 `ct->fwx_data.action` 判断（该调用点全文件唯一）
 - fwx：辅助函数插到最后一个 `#include` 之后；调用点插到 `fwx_add_mac_node(...)` + `mac_filter_write_unlock();` 之后；
-  规则修改路径按 `fwx_api_mod_mac_filter_rule` 收尾处插入清表（UI 实际走这条路，`fwx_add_mac_to_rule` 全模块无人调用）
+  规则修改路径在 `fwx_api_mod_mac_filter_rule` 收尾处插入清表（UI 实际走这条路）
 - fwx.init：在 `rule_manager` 的 `procd_open_instance` 之前插入 `fwx.ko` 加载守卫
 
 脚本幂等（重复执行打印 `[skip]`），锚点命中次数不等于 1 时不动文件并返回 2。
@@ -157,7 +166,8 @@ WORKDIR=$HOME/fw-build WITH_KMOD=1 JOBS=$(nproc) bash scripts/build.sh
 
 | 项 | 说明 |
 |---|---|
-| 无线/网络设置页 | 未包含 `luci-app-fwx-wireless/-network/-system/-firewall`，它们按 fanchmwrt 的 schema 写配置，会与 DSA/mtwifi 冲突 |
+| 无线/网络设置页 | 未包含 `luci-app-fwx-wireless/-network/-system/-firewall`，它们按 fanchmwrt 的 schema 写配置，会与 DSA/mtwifi 冲突。这几项仍是 immortalwrt 原生页面，外观由 fanchmwrt 主题外壳统一（`cascade.css`），内容逻辑保持原样 |
+| 侧边栏 | `menu-fanchmwrt.js` 接管整个菜单渲染，未在图标白名单里的条目回落到 `default` 图标；顺序按 LuCI 的 `menu.d` 排 |
 | fastnat | 依赖 `kmod-shortcut-fe`，与 HNAT 互斥，未包含 |
 | 特征库升级 | 需要 fanchmwrt 云端账号；离线用自带 `feature.cfg` |
 | 识别粒度 | 域名/URL/端口/特征串，对 ECH、加密 SNI 退化 |
