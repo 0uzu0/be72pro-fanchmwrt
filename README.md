@@ -256,6 +256,32 @@ PPPoE 自然拨不上。这一个问题就解释了「刷完拨号失败」的�
 （`wireless` / `firewall` / `fastnat`）保留 `is not set`，`network` / `system`
 一律不再写 `is not set`。改完做过一次全文件扫描，`=y` 与 `is not set` 的交集为 0。
 
+## 三之五、接口自检：`scripts/check_api.py`
+
+界面包（`luci-app-fwx-*`）与守护进程（`fwxd`）是两个仓库，页面通过
+`ubus call fwx common '{"api":"xxx"}'` 对接。上游改接口名不会通知你，
+取错版本就是「页面能打开、数据是空的」。
+
+脚本在**编译前**（第 2 步之后）跑，判定口径是：
+**只算「视图 `.htm/.js` 里真的引用到、且控制器确实声明过」的接口**，
+拿它和 `fwxd/src/fwx_ubus.c` 的 api 表取差集。控制器里没被任何页面调用的路由
+单列 `[i]`，不计入缺失。
+
+### 一次真实误报（2026-11-26，值得记住）
+
+第一版把控制器声明过的 api 全算成「页面会用」，一次报 13 个缺失，看着像三个页面全废。
+逐条核实后只有 **2 个**是真的：
+
+| 报出来的 | 真相 |
+|---|---|
+| macfilter 9 个（`get_mac_filter_base/_time/_user`、`set_*`、`add/del_mac_filter_user`、`get_mf_status`） | **假阳性**。三个页签 rules / whitelist / advance 只用 `get_mac_filter_rules`、`get_mac_filter_whitelist`、`get/set_mac_filter_adv`，fwxd 都有 |
+| user 2 个（`get_parental_control_detail`、`get_system_base_info`） | **假阳性**。终端详情只用 `get_user_basic_info` |
+| dashboard 2 个（`get_init_status` / `set_init_status`） | **真缺**，但影响只是「模式切换引导」浮层不弹（页面里 `if(!data) return;`，不报错、不缺功能） |
+
+同时纠正一个更早的错误结论：我曾据此判断「界面包与 fwxd 版本错配、页面会空白」，
+还为此换过 `PKG_REF`。实际上 fwxd 24.10.4 与 25.12 的 MAC 相关 api 集合**完全一致**
+（都是 `*_rules` / `*_adv` / `*_whitelist`），那 9 个接口任何版本都没有，换版本无用。
+
 ## 四、构建失败时的降级开关
 
 `fwx.ko` 要打一个改动 `struct nf_conn` 的内核补丁，6.6 上存在失败可能。仓库已做两层兜底：
