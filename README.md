@@ -259,28 +259,39 @@ PPPoE 自然拨不上。这一个问题就解释了「刷完拨号失败」的�
 ## 三之五、接口自检：`scripts/check_api.py`
 
 界面包（`luci-app-fwx-*`）与守护进程（`fwxd`）是两个仓库，页面通过
-`ubus call fwx common '{"api":"xxx"}'` 对接。上游改接口名不会通知你，
+`ubus call fwx common '{"api":"xxx"}'` 对接。上游改接口名不会通知，
 取错版本就是「页面能打开、数据是空的」。
 
-脚本在**编译前**（第 2 步之后）跑，判定口径是：
-**只算「视图 `.htm/.js` 里真的引用到、且控制器确实声明过」的接口**，
-拿它和 `fwxd/src/fwx_ubus.c` 的 api 表取差集。控制器里没被任何页面调用的路由
-单列 `[i]`，不计入缺失。
+### 口径改了三次，前两次都是错的
 
-### 一次真实误报（2026-11-26，值得记住）
+| 版本 | 口径 | 结果 |
+|---|---|---|
+| v1 | 控制器里出现过的 api 全算 | 报 13 个，其中 11 个假阳性 |
+| v2 | 加上「视图里出现过」 | 反涨到 21 个——把 **LuCI 路由名**当成了 **fwxd api 名**（路由 `get_system_base_info` 内部调的其实是 `get_system_info`） |
+| v3 | entry 注册 → 视图 → 视图引用的路由 → 控制器函数 → 函数里真正的 `.api="x"`；并排除**未注册的死视图** | 报 8 个，可逐条对到页面 |
 
-第一版把控制器声明过的 api 全算成「页面会用」，一次报 13 个缺失，看着像三个页面全废。
-逐条核实后只有 **2 个**是真的：
+v3 还处理了两件容易漏的事：
+- 视图用 `<%+user/user_history%>` 引用的子视图要展开
+- 未被任何 entry 注册、也没人引用的视图不算（例如 `macfilter/user.htm` 里确实调
+  4 个 `*_user` 接口，但控制器只注册了 rules/whitelist/advance，那页进不去）
 
-| 报出来的 | 真相 |
-|---|---|
-| macfilter 9 个（`get_mac_filter_base/_time/_user`、`set_*`、`add/del_mac_filter_user`、`get_mf_status`） | **假阳性**。三个页签 rules / whitelist / advance 只用 `get_mac_filter_rules`、`get_mac_filter_whitelist`、`get/set_mac_filter_adv`，fwxd 都有 |
-| user 2 个（`get_parental_control_detail`、`get_system_base_info`） | **假阳性**。终端详情只用 `get_user_basic_info` |
-| dashboard 2 个（`get_init_status` / `set_init_status`） | **真缺**，但影响只是「模式切换引导」浮层不弹（页面里 `if(!data) return;`，不报错、不缺功能） |
+### 当前实测缺口（`fwxd` 24.10.4 + packages@3c6ae71）
 
-同时纠正一个更早的错误结论：我曾据此判断「界面包与 fwxd 版本错配、页面会空白」，
-还为此换过 `PKG_REF`。实际上 fwxd 24.10.4 与 25.12 的 MAC 相关 api 集合**完全一致**
-（都是 `*_rules` / `*_adv` / `*_whitelist`），那 9 个接口任何版本都没有，换版本无用。
+| 页面 | 缺的接口 | 症状 |
+|---|---|---|
+| 系统监控 › 流量统计 | `get_history_traffic_stats` | 历史流量曲线空 |
+| 上网审计 › 用户白名单 | `get/add/del_record_whitelist` | 该页不可用 |
+| 终端列表 › 详情 | `get_user_daily_summary`、`get_user_parental_control_rules` | 每日汇总、家长控制规则两块空 |
+| 仪表板 | `get_init_status`/`set_init_status` | 只是「模式切换引导」浮层不弹，无功能损失 |
+
+**为什么换版本修不了**：这些名字在 `fwxd` 的 24.10.4 与 25.12 两版里都没有
+（24.10.4 的 api 表里一个都没有；25.12 有其中 7 个）。所以不能靠改 `PKG_REF` 解决。
+
+**如果要补齐**：25.12 的 `fwxd`（纯用户态）实现了其中 7 个，且它和 24.10.4 的
+`fwx_netlink.c` 协议层完全一致（结构体/属性名逐项对比无差异），理论上可以只换
+用户态、保留 24.10.4 的 `fwx.ko`。代价是多 4 个依赖（libsqlite3/libmosquitto/
+libcurl/libopenssl）、镜像变大，且新版 `fwxd` 的返回结构可能与旧界面包有细微差异，
+需要实机对比。目前**没有做**，默认仍是 24.10.4 那套。
 
 ## 四、构建失败时的降级开关
 

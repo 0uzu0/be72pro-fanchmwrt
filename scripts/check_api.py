@@ -7,15 +7,16 @@
     ubus call fwx common '{"api": "xxx"}'
 对接。上游改接口名不会通知，取错版本就会「页面能打开、数据是空的、保存没反应」。
 
-第一版把控制器里声明过的 api 全算进去，结果大量假阳性：控制器里常留着一堆
-没被任何页面调用的路由（比如 macfilter 的 get_mac_filter_base / _time / _user
-在 24.10.4 的 fwxd 里确实没有，但三个页签 rules/whitelist/advance 根本不用它们，
-只用 get_mac_filter_rules / _whitelist / _adv）。
-故改为两级：
-  declared   —— 控制器声明过的（call("x") 或 .api="x"）
-  referenced —— 视图（.htm/.js）里真的出现过的
-只有 referenced ∩ declared 才算「页面会用到的接口」，拿它去和 fwxd 比。
-控制器独有的那些单独列为 [i]，只提示、不算失败。
+三轮才把口径调准，过程值得记下来：
+
+  v1  把控制器里出现过的 api 全算 → 13 个「缺失」，其中 11 个是假阳性
+  v2  加上「视图里出现过」才算 → 反而涨到 21 个。原因：把 LuCI 的**路由名**
+      当成了 fwxd 的 **api 名**（路由 get_system_base_info 内部可能调的是
+      get_system_info），两者经常不同名。
+  v3  沿链路走：entry 注册 → 视图文件 → 视图引用的路由 → 控制器函数 → 函数里
+      真正的 .api = "x"。同时**排除未被任何 entry 注册、也没人引用的死视图**
+      （例：macfilter/user.htm 里确实调 4 个 *_user 接口，但控制器只注册了
+        rules / whitelist / advance，那个视图根本进不去）。
 
 用法：  python3 check_api.py <源码树根>
 返回：  0 = 全部命中；1 = 有缺失（调用方决定是告警还是失败）
@@ -29,18 +30,16 @@ APP_PREFIX = "luci-app-fwx-"
 FWXD_UBUS = "package/fcm/fwxd/src/fwx_ubus.c"
 
 API_PATTERNS = (
-    # req_obj.api = "x" / .api = "x"
     re.compile(r'\.api\s*=\s*"([A-Za-z0-9_]+)"'),
-    # { api = "x" }（不带点号，也别忘了前面不能是别的标识符尾巴）
     re.compile(r'(?<![A-Za-z0-9_.])api\s*=\s*"([A-Za-z0-9_]+)"'),
     re.compile(r'"api"\s*:\s*"([A-Za-z0-9_]+)"'),
     re.compile(r"'api'\s*:\s*'([A-Za-z0-9_]+)'"),
 )
-CALL_PATTERN = re.compile(r'call\(\s*"([A-Za-z0-9_]+)"\s*\)')
-TOKEN_PATTERN = re.compile(r'([a-z][a-z0-9_]{3,})')
-
-VIEW_DIRS = ("luasrc/view", "htdocs", os.path.join("root", "usr", "share"))
-CTRL_DIR = os.path.join("luasrc", "controller")
+FUNC_RE = re.compile(r'function\s+([A-Za-z0-9_]+)\s*\(')
+# entry({...}, cbi("macfilter/rules") ...) / template("fwx_network/lan") / call("fn")
+TARGET_RE = re.compile(r'(?:cbi|template)\(\s*"([A-Za-z0-9_/]+)"')
+CALL_RE = re.compile(r'call\(\s*"([A-Za-z0-9_]+)"')
+TOKEN_RE = re.compile(r'([a-z][a-z0-9_]{3,})')
 
 
 def read(path):
@@ -49,8 +48,7 @@ def read(path):
 
 
 def app_dirs(root):
-    """界面包可能在源码树根，也可能被拷到 <root>/package/ 下（本仓库是后者）。
-    两处都扫，否则会静默输出「没扫到界面包」而跳过整个自检 —— 这个坑真踩过。"""
+    """界面包可能在源码树根，也可能被拷到 <root>/package/ 下（本仓库是后者）。"""
     found = []
     for base_dir in (root, os.path.join(root, "package")):
         if not os.path.isdir(base_dir):
@@ -64,44 +62,77 @@ def app_dirs(root):
     return found
 
 
-def walk_text(base, subdirs, exts):
-    for sub in subdirs:
-        top = os.path.join(base, sub)
-        if not os.path.isdir(top):
-            continue
-        for dirpath, _, files in os.walk(top):
-            for fn in files:
-                if fn.endswith(exts):
-                    try:
-                        yield read(os.path.join(dirpath, fn))
-                    except OSError:
-                        continue
-
-
-def collect(root):
-    """返回 {app: {"declared": set, "referenced": set}}"""
-    out = {}
-    for name, base in app_dirs(root):
-        declared = set()
-        for txt in walk_text(base, (CTRL_DIR,), (".lua",)):
-            for pat in API_PATTERNS:
-                declared.update(pat.findall(txt))
-            declared.update(CALL_PATTERN.findall(txt))
-
-        referenced = set()
-        for txt in walk_text(base, VIEW_DIRS, (".htm", ".js", ".lua")):
-            for pat in API_PATTERNS:
-                referenced.update(pat.findall(txt))
-            # 路由路径（如 admin/dashboard_api/get_init_status）里的最后一段
-            referenced.update(
-                m.group(1)
-                for m in re.finditer(r'/[A-Za-z0-9_]+/([a-z][a-z0-9_]{3,})', txt)
-            )
-            referenced.update(TOKEN_PATTERN.findall(txt))
-
-        if declared or referenced:
-            out[name] = {"declared": declared, "referenced": referenced}
+def apis_in(text):
+    out = set()
+    for pat in API_PATTERNS:
+        out.update(pat.findall(text))
     return out
+
+
+def parse_controller(text):
+    """返回 {函数名: {该函数里用到的 api}}"""
+    funcs = {}
+    marks = [(m.group(1), m.end()) for m in FUNC_RE.finditer(text)]
+    for i, (name, body_start) in enumerate(marks):
+        body_end = marks[i + 1][1] if i + 1 < len(marks) else len(text)
+        funcs[name] = apis_in(text[body_start:body_end])
+    return funcs
+
+
+def ctrl_files(app):
+    top = os.path.join(app, "luasrc", "controller")
+    if not os.path.isdir(top):
+        return []
+    return [os.path.join(top, f) for f in sorted(os.listdir(top)) if f.endswith(".lua")]
+
+
+def view_path(app, target):
+    """cbi("macfilter/rules") / template("fwx_network/lan") → 视图文件路径"""
+    for ext in (".htm", ".lua"):
+        p = os.path.join(app, "luasrc", "view", target + ext)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def analyze(app):
+    funcs = {}
+    targets = set()
+    for cf in ctrl_files(app):
+        txt = read(cf)
+        funcs.update(parse_controller(txt))
+        targets.update(TARGET_RE.findall(txt))
+        targets.update(CALL_RE.findall(txt))
+        # 控制器里 render("user/user_status") / include("x/y") 这类引用的视图，
+        # 也要算可达（它们不是 entry 注册的独立页面，而是某个页面里的子视图）
+        for cand in re.findall(r'"([A-Za-z0-9_]+/[A-Za-z0-9_/]+)"', txt):
+            if view_path(app, cand):
+                targets.add(cand)
+
+    views = [p for p in (view_path(app, t) for t in sorted(targets)) if p]
+
+    # 视图里用 <%+user/user_history%> 引用的子视图也是可达的，跟着展开一层
+    extra = []
+    for v in views:
+        for inc in re.findall(r'<%\+\s*([A-Za-z0-9_/]+)\s*%>', read(v)):
+            sub = view_path(app, inc)
+            if sub and sub not in views:
+                extra.append(sub)
+    views += extra
+
+    used = set()
+    for v in views:
+        txt = read(v)
+        used |= apis_in(txt)
+        for tok in set(TOKEN_RE.findall(txt)):
+            # 视图引用的路由名 → 控制器函数 → 函数里的真实 api
+            if tok in funcs:
+                used |= funcs[tok]
+
+    declared = set()
+    for apis in funcs.values():
+        declared |= apis
+    return used, declared
 
 
 def main():
@@ -115,36 +146,34 @@ def main():
         return 0
 
     provided = set(re.findall(r'"([a-z][a-z0-9_]{2,})"', read(ubus)))
-    data = collect(root)
-    if not data:
+    apps = app_dirs(root)
+    if not apps:
         print("  [!] 没扫到界面包，跳过自检")
         return 0
 
     total_missing = 0
-    print("  接口自检（页面实际调用 → fwxd）：")
-    for app in sorted(data):
-        declared = data[app]["declared"]
-        # 页面会用到 = 视图里出现过、且控制器确实声明过的
-        used = data[app]["referenced"] & declared
+    print("  接口自检（可达页面 → 控制器 → fwxd 实际 api）：")
+    for name, path in apps:
+        used, declared = analyze(path)
         if not used:
             continue
         missing = sorted(used - provided)
         if missing:
             total_missing += len(missing)
-            print("    [x] %-32s 缺 %2d: %s" % (app, len(missing), ", ".join(missing)))
+            print("    [x] %-32s 缺 %2d: %s" % (name, len(missing), ", ".join(missing)))
         else:
-            print("    [v] %-32s %d 个接口全部命中" % (app, len(used)))
-        idle = sorted(x for x in declared - used if not x.startswith("api_"))
+            print("    [v] %-32s %d 个接口全部命中" % (name, len(used)))
+        idle = sorted(declared - used)
         if idle:
-            print("        [i] 另有 %d 个控制器路由未被页面引用（不算缺失）：%s"
-                  % (len(idle), ", ".join(idle[:6]) + (" ..." if len(idle) > 6 else "")))
+            print("        [i] %d 个接口只在未被注册的视图里出现（不算缺失）：%s"
+                  % (len(idle), ", ".join(idle[:5]) + (" ..." if len(idle) > 5 else "")))
 
     if total_missing:
-        print("  !! 共 %d 个接口对不上：页面会取不到数据（不是「页面打不开」）。"
-              % total_missing)
-        print("     多半是界面包与 fwxd 版本不同期，检查 build.sh 里的 PKG_REF / FCM_REF。")
+        print("  !! 共 %d 个接口对不上：对应页面/区块会取不到数据（不是打不开）。" % total_missing)
+        print("     换了 PKG_REF / FCM_REF 仍报同样的名字，说明两个版本都没有该 api，"
+              "换版本无用，只能补 fwxd 实现或接受缺块。")
         return 1
-    print("  ✔ 页面用到的接口 fwxd 都提供")
+    print("  ✔ 可达页面用到的接口 fwxd 都提供")
     return 0
 
 
