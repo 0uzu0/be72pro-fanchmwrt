@@ -128,6 +128,40 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 
 ---
 
+## 二之二、最容易漏的一步：三个交换机/PHY 驱动仓库
+
+锐捷的 `target/linux/mediatek/image/filogic.mk` 给 BE72 的设备定义里写：
+
+```make
+DEVICE_PACKAGES += ... swconfig kmod-rtl837x_gsw          # -mod
+DEVICE_PACKAGES += kmod-rtl8372n_dsa                       # -dsa-mod
+```
+
+但这两个包**不在源码树里**——它们在三个独立仓库，锐捷自己的 CI 会在编译前 clone：
+
+```
+RuijieNetworksCommunity/rtl837x-gsw-driver   -> PKG_NAME := rtl837x_gsw   (kmod-rtl837x_gsw)
+RuijieNetworksCommunity/rtl837x-dsa-driver   -> PKG_NAME := rtl8372n_dsa   (kmod-rtl8372n_dsa)
+RuijieNetworksCommunity/rtl8261-phy-driver   -> PKG_NAME := rtl8261d
+```
+
+**漏了会怎样：什么都不会发生。** 构建成功、镜像照发，`DEVICE_PACKAGES` 里不存在的包
+被 OpenWrt **静默忽略**，结果是镜像里没有交换机驱动 → 5 个 2.5G 口（**含 WAN**）全不通，
+PPPoE 自然拨不上。这一个问题就解释了「刷完拨号失败」的全部现象。
+
+现在 `build.sh` 第 1b/8 步会 clone 并拷进 `$RJ/package/`，第 7b/8 步再回头校验
+`build.log` 里有没有 `Installing kmod-rtl837x_gsw` / `Installing kmod-rtl8372n_dsa`，
+**缺任何一个直接判构建失败**，不再把网络不通的固件当成功产物发出去。
+
+顺带两个容易误判的点：
+
+- `kmod-mt7992-firmware` / `kmod-mt7992-23-firmware` 同样"缺失"，但**无害**：
+  本机用私有驱动 `mt_wifi7`，固件文件直接打在 `package/mt/drivers/mt_hwifi/files/` 里，
+  不依赖这两个主线 mt76 的固件包。
+- `kmod-swconfig` 不会出现在包清单里，因为 `kmod-rtl837x_gsw` 的 `DEPENDS` 会把它带进来，
+  并连带把内核 `CONFIG_SWCONFIG` 从 `n` 变成 `m`。这一步会让内核重新配置一次，
+  首次构建时间会变长，属正常。
+
 ## 三之三、UI 样式：按官网截图逐项校准
 
 依据来自两处硬证据，不再凭印象配色：
@@ -253,7 +287,10 @@ EtherType `0x8863`、LCP/PAP 是 PPP 协议，都不经过 IP 钩子，所以 fw
 |---|---|---|
 | MT798X-6.6-24.10 | `401e2ba1682314e48aabaa1af28d0e161aa58554` | 底座（RTL8372N / mt_wifi7 / HNAT） |
 | fanchmwrt | `9640f14b256065fd621de479b8d93762141504d3` | **24.10.4 分支**，fwx + fwxd + 主题 |
-| fanchmwrt-packages | `3c6ae7117843b46aa95b57d615874101d2db8700` | 14 个界面包，**与 fwxd 同期（2026-10-19）** |
+| fanchmwrt-packages | `3c6ae7117843b46aa95b57d615874101d2db8700` | 16 个界面包，**与 fwxd 同期（2026-10-19）** |
+| rtl837x-gsw-driver | `a1650c6ac6e658b7ee7594ec8283d94205a001fe` | RTL8372N swconfig 驱动（-mod 变体必需） |
+| rtl837x-dsa-driver | `b14546dbeabf500c287a6ff7ce847919a02d4a26` | RTL8372N DSA 驱动（-dsa-mod 变体必需） |
+| rtl8261-phy-driver | `799af1493ce181a0a087d7b38639209fbcda2f26` | 2.5G PHY（上游 CI 同款，一并取） |
 
 ---
 

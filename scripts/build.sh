@@ -34,6 +34,18 @@ PKG_REPO="https://github.com/fanchmwrt/fanchmwrt-packages.git"
 # user 缺 2 个（新版把它们换成了别的接口），表现为页面空白/点了没反应。
 PKG_REF="3c6ae7117843b46aa95b57d615874101d2db8700"
 
+# 三个交换机/PHY 驱动仓库：锐捷自己的 CI 在编译前会 git clone 到 package/ 下。
+# 少了它们，设备定义里的 DEVICE_PACKAGES（kmod-rtl837x_gsw / kmod-rtl8372n_dsa）
+# 指向的包根本不存在，OpenWrt 只会静默忽略 —— 结果是镜像里没有交换机驱动，
+# 5 个 2.5G 口（含 WAN）全部不通，而构建毫无报错。
+# 包名对应关系：rtl837x_gsw -> kmod-rtl837x_gsw，rtl8372n_dsa -> kmod-rtl8372n_dsa
+DRV_GSW_REPO="https://github.com/RuijieNetworksCommunity/rtl837x-gsw-driver.git"
+DRV_GSW_REF="a1650c6ac6e658b7ee7594ec8283d94205a001fe"
+DRV_DSA_REPO="https://github.com/RuijieNetworksCommunity/rtl837x-dsa-driver.git"
+DRV_DSA_REF="b14546dbeabf500c287a6ff7ce847919a02d4a26"
+DRV_PHY_REPO="https://github.com/RuijieNetworksCommunity/rtl8261-phy-driver.git"
+DRV_PHY_REF="799af1493ce181a0a087d7b38639209fbcda2f26"
+
 RJ="$WORKDIR/MT798X-6.6-24.10"
 FCM="$WORKDIR/fanchmwrt"
 PKG="$WORKDIR/fanchmwrt-packages"
@@ -70,6 +82,20 @@ clone_at() {
 clone_at "$RJ"  "$RJ_REPO"  "$RJ_REF"
 clone_at "$FCM" "$FCM_REPO" "$FCM_REF"
 clone_at "$PKG" "$PKG_REPO" "$PKG_REF"
+
+# 三个驱动：先落到 $WORKDIR/drivers/<name>，再整目录拷进 $RJ/package/
+# （直接 clone 到 $RJ/package 里会因为 $RJ 自身是 git 仓库而产生嵌套仓库告警）
+log "1b/8 取交换机/PHY 驱动（上游 CI 同款）"
+clone_at "$WORKDIR/drivers/rtl837x-gsw-driver" "$DRV_GSW_REPO" "$DRV_GSW_REF"
+clone_at "$WORKDIR/drivers/rtl837x-dsa-driver" "$DRV_DSA_REPO" "$DRV_DSA_REF"
+clone_at "$WORKDIR/drivers/rtl8261-phy-driver" "$DRV_PHY_REPO" "$DRV_PHY_REF"
+for d in rtl837x-gsw-driver rtl837x-dsa-driver rtl8261-phy-driver; do
+	rm -rf "$RJ/package/$d"
+	mkdir -p "$RJ/package/$d"
+	cp -r "$WORKDIR/drivers/$d/." "$RJ/package/$d/"
+	rm -rf "$RJ/package/$d/.git"
+done
+echo "  已放入 3 个驱动包"
 
 # ---------------------------------------------------------------- 2. 搬包
 log "2/8 搬 fwx 包进源码树"
@@ -334,6 +360,37 @@ if [ "$BUILD_RC" -ne 0 ]; then
 		tail -40 "$WORKDIR/build.log"
 	fi
 	exit "$BUILD_RC"
+fi
+
+# ---------------------------------------------------------------- 7b. 关键模块校验
+# 设备定义里的 DEVICE_PACKAGES 如果指向不存在的包，OpenWrt 只是静默忽略，
+# 构建照样成功、镜像照样产出 —— 但 5 个 2.5G 口（含 WAN）全不通，且没有任何报错。
+# 2026-11-26 那次出包就是这样：kmod-rtl837x_gsw / kmod-rtl8372n_dsa 都没进镜像。
+# 所以这里直接查「安装进 rootfs」的日志行，缺了就判构建失败，不许发布坏固件。
+log "7b/8 关键模块校验（交换机驱动 / DPI）"
+VERIFY_MISSING=()
+need_installed() {
+	local pkg="$1" desc="$2"
+	if grep -qE "^(.*Installing|Installing) ${pkg} \(" "$WORKDIR/build.log"; then
+		echo "  [v] ${pkg} 已装入镜像（${desc}）"
+	else
+		echo "  [x] ${pkg} 未装入镜像（${desc}）"
+		VERIFY_MISSING+=("${pkg}")
+	fi
+}
+need_installed kmod-rtl837x_gsw "RTL8372N swconfig 驱动，-mod 变体的 5 个 2.5G 口"
+need_installed kmod-rtl8372n_dsa "RTL8372N DSA 驱动，-dsa-mod 变体"
+if [ "$WITH_KMOD" = "1" ]; then
+	need_installed kmod-fwx "DPI 内核模块"
+fi
+
+if [ ${#VERIFY_MISSING[@]} -gt 0 ]; then
+	echo
+	warn "以下模块未进入镜像：${VERIFY_MISSING[*]}"
+	echo "   最常见原因：DEVICE_PACKAGES 里的包名与实际 PKG_NAME 不一致（会被静默忽略），"
+	echo "   或驱动仓库没被拷进 package/。检查第 1b/8 步与 package/*drv* 目录。"
+	echo "   已中止，避免发布「网络不通」的固件。"
+	exit 1
 fi
 
 # ---------------------------------------------------------------- 8. 产物
