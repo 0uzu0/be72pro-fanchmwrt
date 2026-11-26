@@ -140,10 +140,16 @@ DEVICE_PACKAGES += kmod-rtl8372n_dsa                       # -dsa-mod
 但这两个包**不在源码树里**——它们在三个独立仓库，锐捷自己的 CI 会在编译前 clone：
 
 ```
-RuijieNetworksCommunity/rtl837x-gsw-driver   -> PKG_NAME := rtl837x_gsw   (kmod-rtl837x_gsw)
+RuijieNetworksCommunity/rtl837x-gsw-driver   -> PKG_NAME := rtl837x_gsw    (kmod-rtl837x_gsw)
 RuijieNetworksCommunity/rtl837x-dsa-driver   -> PKG_NAME := rtl8372n_dsa   (kmod-rtl8372n_dsa)
-RuijieNetworksCommunity/rtl8261-phy-driver   -> PKG_NAME := rtl8261d
 ```
+
+第三个 `rtl8261-phy-driver` **不要克隆**：树内已有 `package/kernel/rtl8261d`
+（`PKG_NAME=rtl8261d`，源码就是那个仓库，pin 在 `19fa6fa`），再克隆会撞同名包。
+
+另外树内还有个 `package/kernel/rtl837x-gsw`，是同一驱动的旧打包
+（`PKG_NAME=switch-rtl837x`，`FILES` 同样是 `rtl837x_gsw.ko`）。它和克隆版
+名字不同但产出同一个 `.ko`，两者都装会文件冲突，所以脚本里把它删掉，只留克隆版。
 
 **漏了会怎样：什么都不会发生。** 构建成功、镜像照发，`DEVICE_PACKAGES` 里不存在的包
 被 OpenWrt **静默忽略**，结果是镜像里没有交换机驱动 → 5 个 2.5G 口（**含 WAN**）全不通，
@@ -290,7 +296,6 @@ PPPoE 自然拨不上。这一个问题就解释了「刷完拨号失败」的�
 | fanchmwrt-packages | `3c6ae7117843b46aa95b57d615874101d2db8700` | 16 个界面包，**与 fwxd 同期（2026-10-19）** |
 | rtl837x-gsw-driver | `a1650c6ac6e658b7ee7594ec8283d94205a001fe` | RTL8372N swconfig 驱动（-mod 变体必需） |
 | rtl837x-dsa-driver | `b14546dbeabf500c287a6ff7ce847919a02d4a26` | RTL8372N DSA 驱动（-dsa-mod 变体必需） |
-| rtl8261-phy-driver | `799af1493ce181a0a087d7b38639209fbcda2f26` | 2.5G PHY（上游 CI 同款，一并取） |
 
 ---
 

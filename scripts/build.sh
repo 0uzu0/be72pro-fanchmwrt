@@ -43,8 +43,8 @@ DRV_GSW_REPO="https://github.com/RuijieNetworksCommunity/rtl837x-gsw-driver.git"
 DRV_GSW_REF="a1650c6ac6e658b7ee7594ec8283d94205a001fe"
 DRV_DSA_REPO="https://github.com/RuijieNetworksCommunity/rtl837x-dsa-driver.git"
 DRV_DSA_REF="b14546dbeabf500c287a6ff7ce847919a02d4a26"
-DRV_PHY_REPO="https://github.com/RuijieNetworksCommunity/rtl8261-phy-driver.git"
-DRV_PHY_REF="799af1493ce181a0a087d7b38639209fbcda2f26"
+# rtl8261d 不克隆：树内已自带 package/kernel/rtl8261d（PKG_NAME=rtl8261d，
+# 源码即 rtl8261-phy-driver，pin 在 19fa6fa）。再克隆会撞同名包。
 
 RJ="$WORKDIR/MT798X-6.6-24.10"
 FCM="$WORKDIR/fanchmwrt"
@@ -88,14 +88,18 @@ clone_at "$PKG" "$PKG_REPO" "$PKG_REF"
 log "1b/8 取交换机/PHY 驱动（上游 CI 同款）"
 clone_at "$WORKDIR/drivers/rtl837x-gsw-driver" "$DRV_GSW_REPO" "$DRV_GSW_REF"
 clone_at "$WORKDIR/drivers/rtl837x-dsa-driver" "$DRV_DSA_REPO" "$DRV_DSA_REF"
-clone_at "$WORKDIR/drivers/rtl8261-phy-driver" "$DRV_PHY_REPO" "$DRV_PHY_REF"
-for d in rtl837x-gsw-driver rtl837x-dsa-driver rtl8261-phy-driver; do
+for d in rtl837x-gsw-driver rtl837x-dsa-driver; do
 	rm -rf "$RJ/package/$d"
 	mkdir -p "$RJ/package/$d"
 	cp -r "$WORKDIR/drivers/$d/." "$RJ/package/$d/"
 	rm -rf "$RJ/package/$d/.git"
 done
-echo "  已放入 3 个驱动包"
+
+# 树内 package/kernel/rtl837x-gsw 是同一个驱动的旧打包（PKG_NAME=switch-rtl837x，
+# FILES 同样是 rtl837x_gsw.ko）。留着它会和刚克隆的 rtl837x_gsw 产出同名 .ko，
+# 一旦两者都被安装就是文件冲突；而且它多做一遍编译。删掉，只保留克隆版。
+rm -rf "$RJ/package/kernel/rtl837x-gsw"
+echo "  已放入 2 个驱动包（gsw / dsa），并移除树内重复的 rtl837x-gsw"
 
 # ---------------------------------------------------------------- 2. 搬包
 log "2/8 搬 fwx 包进源码树"
