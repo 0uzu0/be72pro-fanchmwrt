@@ -286,35 +286,44 @@ v3 还处理了两件容易漏的事：
 - 未被任何 entry 注册、也没人引用的视图不算（例如 `macfilter/user.htm` 里确实调
   4 个 `*_user` 接口，但控制器只注册了 rules/whitelist/advance，那页进不去）
 
-### 当前实测缺口（`fwxd` 24.10.4 + packages@3c6ae71）
+### 实测缺口的处置结果（`fwxd` 24.10.4 + packages@3c6ae71）
 
-| 页面 | 缺的接口 | 症状 | 现状 |
+全部缺口已闭环，实现在 `patches/fwxd/fwx_ext_compat.c`（约 1300 行，纯用户态，
+不碰内核），由 `scripts/patch_fwxd_ext.py` 锚点插入分派表并生效。
+
+| 页面 | 缺的接口 | 处置 | 数据来源 |
 |---|---|---|---|
-| 系统监控 › 流量统计 | `get_history_traffic_stats` | 历史流量曲线空 | 未修（见下） |
-| 上网审计 › 用户白名单 | `get/add/del_record_whitelist` | 该页不可用 | 未修（见下） |
-| 终端列表 › 详情 | `get_user_daily_summary`、`get_user_parental_control_rules` | 每日汇总、家长控制规则两块空 | 未修（见下） |
-| 仪表板 | `get_init_status`/`set_init_status` | 「模式切换引导」浮层不弹 | **已补**（`fwx_ext_compat.c`） |
-| 网络设置 › 防火墙 | `get_firewall`/`set_firewall` | 整页不可用 | **已补**（`fwx_firewall.c`） |
+| 系统监控 › 流量统计 | `get_history_traffic_stats` | **已实现** | `client_data/global/stats/traffic_<date>.json` —— `fwx_user.c` 的 `save_global_traffic_stats_to_file()` 本来就在天天写，只是从来没人读；今天用 `get_global_traffic_stats()` 实时值 |
+| 上网审计 › 用户白名单 | `get/add/del_record_whitelist` | **已实现且生效** | uci `fwx_record.@whitelist[0].whitelist`（key 与 25.12 一致）；生效点：① `add_user_record` 写入侧跳过（新记录不入库）② `get_user_records` 两个循环过滤（存量不显示）③ `visit_list` 过滤（访问明细不显示） |
+| 终端列表 › 详情 | `get_user_daily_summary` | **已实现** | `client_data/<mac>/stats/hourly_<date>.json`（逐小时流量/在线/活跃，`fwx_user.c` 跨天归档一直在写）+ `top_apps_<date>.json`；今天用会话记录 + `online_session` + `client->visit` 实时聚合 |
+| 终端列表 › 详情 | `get_user_parental_control_rules` | **已实现** | `macfilter.@rule[i]` 的时段规则（time 型）+ appfilter/macfilter 白名单命中标志 |
+| 仪表板 | `get_init_status`/`set_init_status` | **已实现** | `/etc/fwx_init_status` |
+| 网络设置 › 防火墙 | `get_firewall`/`set_firewall` | **已实现** | 移植 25.12 的 `fwx_firewall.c`（只读写 `firewall.@defaults[0]`，就是 fw4 标准 uci）+ `kmod-nft-fullcone` |
 
-**为什么当初换版本修不了**：这些名字在 `fwxd` 的 24.10.4 api 表里一个都没有，
-25.12 有其中 7 个。但 25.12 是给 6.12 写的（`nf_fwx_data` 布局变了：`host` 由指针
-改成 `host[32]` 数组，还多了 `user_ptr` / `session_node`），整套换过去要连内核补丁
-和 `fwx.ko` 一起动，风险远大于收益。
+**当时"不补"的理由与翻案记录**（写下来避免下次再误判）：
 
-**已按「只补用户态、不动内核」的原则修了两处**：
+- 「历史流量不落盘」—— **错**。当时只搜了 `get_history_data_root_dir()` 这个
+  25.12 函数名，而 24.10.4 用的是 `get_client_data_base_dir()`，逐小时/逐日/逐 MAC
+  的落盘体系（`hourly_<date>.json`、`top_apps_<date>.json`、`global/stats/`）
+  一直都在，只是没有读取接口。
+- 「白名单必须内核侧」—— 内核侧（25.12 的 `fwx_match_record_whitelist`）确实是
+  最彻底的位置，但审计记录的**落盘与展示都在 fwxd 用户态**（`user_record_list` →
+  记录文件），在写入点 + 读取点过滤即可达到同样效果，不引入内核崩溃风险。
+  边界：设备详情页的「实时访问」来自内核 `/proc/net/af_visit`，白名单设备在
+  详情页仍能看到实时访问（家长监视视角），这是有意的。
+- 「家长控制依赖 25.12 子系统」—— 界面只要求 time 型规则聚合，24.10 的
+  macfilter 时段规则就够。`today_status.used/limit` 这类配额字段 24.10 规则模型里
+  没有，统一返回 `{effective_today, unlimited:0}`，界面显示为时段进度或不生效。
 
-- `get/set_firewall` —— 142 行、只依赖 libuci，和 24.10.4 的 `libfwx_common`
-  源码逐字节相同，可以直接搬。
-- `get/set_init_status` —— 读写 `/etc/fwx_init_status`（这个文件 24.10.4 的
-  Makefile 本来就会装），二十行搞定。
+**精度边界**（诚实记录，不是 bug）：
 
-**明确不补的三项及原因**（不是懒，是补了也不对）：
-
-| 缺口 | 为什么不能补 |
-|---|---|
-| 历史流量曲线 | 24.10.4 的 fwxd **不落盘** `global/stats/traffic_YYYY-MM-DD.json`，`get_history_data_root_dir()` 这个函数整个不存在。补接口等于返回空数组，得先加一套每日归档任务 —— 那是新功能，不是修 bug |
-| 用户白名单 | 页面能显示列表，但「不记录」这件事由 **内核侧** `fwx_match_record_whitelist()` 决定，24.10.4 的 `fwx.ko` 没有这段。只补用户态会得到「加了白名单照样记」的假功能，比页面不可用更误导 |
-| 终端详情两块 | 依赖 25.12 整套 `pc_*` 家长控制子系统 + `fwx_user_summary.c`（新文件，依赖每日汇总数据），24.10.4 里没有任何对应实现 |
+1. `daily_summary` 的历史天 `top_apps.seconds` 来自 `top_apps_<date>.json` 的
+   `total_time`（fwx_user.c 归档时写入的 per-app 时长），当天实时部分是
+   `latest_time - first_time` 的时段跨度 —— 与 25.12 内核逐包统计的口径略有差异。
+2. `category_seconds` 的 app→分类映射来自解析 `/tmp/feature.cfg` 的 `#class`
+   分段标记；特征库更新后 5 分钟内自动重载。
+3. 历史曲线与每日汇总从刷机当天起才有数据，此前日期显示为 0 —— 数据是攒出来的，
+   不是补出来的。
 
 ## 四、构建失败时的降级开关
 
@@ -343,7 +352,7 @@ v3 还处理了两件容易漏的事：
 │   ├── 980-nf-contrack-support-fwx-data.patch   # 上游 24.10.4 自带：nf_fwx_data + nf_conn 成员
 │   ├── fwxd/                                    # 24.10.4 缺的两个接口（自己写的）
 │   │   ├── fwx_firewall.c / .h                  # get/set_firewall（移植自 25.12，逻辑未改）
-│   │   └── fwx_ext_compat.c                     # get/set_init_status
+│   │   └── fwx_ext_compat.c                     # 引导状态/历史流量/白名单/每日汇总/家长控制（自研）
 │   └── fullconenat-nft/                         # fw4 的 fullcone 表达式内核模块（搬自 25.12）
 ├── scripts/
 │   ├── build.sh
@@ -423,7 +432,7 @@ WORKDIR=$HOME/fw-build WITH_KMOD=1 JOBS=$(nproc) bash scripts/build.sh
 | 项 | 说明 |
 |---|---|
 | 无线设置页 | 未包含 `luci-app-fwx-wireless`：它按 fanchmwrt 自家无线 schema 写配置，本机是 mt_wifi7 私有驱动（`mt7992`），配置项对不上。无线仍是 immortalwrt 原生页面（`wireless-mtk`），外观由 fanchmwrt 主题外壳统一 |
-| 网络设置 / 系统配置 / 防火墙 | **已包含** `-network` / `-system` / `-firewall`。前两个只写 `network.lan|wan` 与 `system` 的标准 uci，第三个只写 `firewall.@defaults[0]`，都不碰锐捷私有拓扑 |
+| 网络设置 / 系统配置 / 防火墙 | **已包含** `-network` / `-system` / `-firewall`。前两个只写 `network.lan|wan` 与 `system` 的标准 uci，第三个只写 `firewall.@defaults[0]`，都不碰锐捷私有拓扑。fw4 侧自带 `nft_try_fullcone()` 运行时自检：内核模块缺失时自动降级为普通 masq 并打 warn（`nft_try_fullcone failed`），FullCone 页开关的真正生效前提是 `kmod-nft-fullcone` 已装（构建校验兜底） |
 | 侧边栏 | `menu-fanchmwrt.js` 接管整个菜单渲染，未在图标白名单里的条目回落到 `default` 图标；顺序按 LuCI 的 `menu.d` 排 |
 | fastnat | 依赖 `kmod-shortcut-fe`，与 HNAT 互斥，未包含 |
 | 特征库升级 | 需要 fanchmwrt 云端账号；离线用自带 `feature.cfg` |
