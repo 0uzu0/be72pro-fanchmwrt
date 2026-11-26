@@ -33,14 +33,25 @@ def read(path):
         return f.read().decode("utf-8", "replace")
 
 
+def app_dirs(root):
+    """界面包可能在源码树根，也可能被拷到 <root>/package/ 下（本仓库就是后者）。
+    两处都扫，否则会静默输出「没扫到界面包」而跳过整个自检 —— 这个坑真踩过。"""
+    found = []
+    for base_dir in (root, os.path.join(root, "package")):
+        if not os.path.isdir(base_dir):
+            continue
+        for name in sorted(os.listdir(base_dir)):
+            if not name.startswith(APP_PREFIX):
+                continue
+            path = os.path.join(base_dir, name)
+            if os.path.isdir(path):
+                found.append((name, path))
+    return found
+
+
 def collect_used(root):
     used = {}
-    for name in sorted(os.listdir(root)):
-        if not name.startswith(APP_PREFIX):
-            continue
-        base = os.path.join(root, name)
-        if not os.path.isdir(base):
-            continue
+    for name, base in app_dirs(root):
         apis = set()
         for dirpath, _, files in os.walk(base):
             for fn in files:
