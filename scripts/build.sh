@@ -103,15 +103,18 @@ echo "  已放入 2 个驱动包（gsw / dsa），并移除树内重复的 rtl83
 
 # ---------------------------------------------------------------- 2. 搬包
 log "2/8 搬 fwx 包进源码树"
-# 界面：14 个。
-# 不装 network / wireless / system / firewall —— 它们是 LuCI 原生页面的替代品，
-# 按 fanchmwrt 自己的机型与 uci schema 写，与锐捷的 RTL8372N + mt7530 + mt_wifi7 拓扑冲突。
+# 界面：17 个。
+# 不装 wireless —— 按 fanchmwrt 自家无线 schema 写，本机是 mt_wifi7 私有驱动（mt7992），
+# 配置项对不上，装了也只会写出一堆驱动不认的项。
+# 装 network / system / firewall —— 已逐个核实它们只写标准 uci
+# （network.lan|wan、system、firewall.@defaults[0]），不碰锐捷私有拓扑。
+# firewall 的后端 api 由下面 2b 的 patch_fwxd_ext.py 补，否则页面打不开数据。
 # 不装 fastnat —— 依赖 SFE 快速转发，锐捷这棵树用的是 HNAT，没有 SFE。
 APPS="luci-app-fwx-resources luci-app-fwx-dashboard luci-app-fwx-dashboard-setting \
 luci-app-fwx-user luci-app-fwx-user-record luci-app-fwx-appfilter luci-app-fwx-record \
 luci-app-fwx-record-whitelist luci-app-fwx-macfilter luci-app-fwx-mac-blacklist \
 luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
-luci-app-fwx-app-center luci-app-fwx-network luci-app-fwx-system"
+luci-app-fwx-app-center luci-app-fwx-network luci-app-fwx-system luci-app-fwx-firewall"
 
 mkdir -p "$RJ/package/fcm"
 for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
@@ -123,6 +126,25 @@ for a in $APPS; do
 	cp -r "$PKG/$a" "$RJ/package/$a"
 done
 echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包 + 1 个主题"
+
+# 2a. FullCone 的 nft 内核模块
+#     锐捷树自带 firewall4 / nftables / libnftnl 三处 fullcone 补丁，但**没有** nft_fullcone.ko，
+#     只装了 kmod-ipt-fullconenat（xtables 版）—— fw4 是 nftables，根本不会加载它。
+#     所以 firewall.@defaults[0].fullcone=1 在本树里一直是个死开关。
+#     补齐方式：搬 fanchmwrt 25.12 用的 nft-fullcone 包（源码 2023-05，对 6.6 无需额外修改；
+#     自带 010 patch 的条件是 6.6.113+ 或 6.12+，对 6.6.94 走 else 分支，等于空操作）。
+# 目录名与 PKG_NAME（fullconenat-nft）保持一致，避免打包宏按目录推导时出偏差。
+mkdir -p "$RJ/package/kernel/fullconenat-nft"
+cp -r "$ROOT/patches/fullconenat-nft/." "$RJ/package/kernel/fullconenat-nft/"
+echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
+
+# 2b. 给 fwxd 补 24.10.4 缺的两个接口（必须在下面的接口自检之前跑，
+#     否则自检会把「补丁才提供的 api」误报成缺口）：
+#       get/set_firewall      —— 防火墙页（FullCone + 基础策略）
+#       get/set_init_status   —— 仪表板首次引导浮层
+#     只往分派表插 4 行 + 拷 3 个新源文件，不碰任何既有函数体。
+python3 "$ROOT/scripts/patch_fwxd_ext.py" "$RJ" \
+	|| warn "fwxd 扩展接口未插入 —— 防火墙页会打开但保存无响应"
 
 # 界面包与 fwxd 是两套仓库，靠 ubus {"api":"..."} 对接；取错版本会「页面能打开、
 # 数据是空的、保存没反应」。这一步在编译前 2 分钟内把版本错配暴露出来。
@@ -265,6 +287,8 @@ REQUIRED_SYMS=(
 	CONFIG_PACKAGE_luci-app-fwx-app-center
 	CONFIG_PACKAGE_luci-app-fwx-network
 	CONFIG_PACKAGE_luci-app-fwx-system
+	CONFIG_PACKAGE_luci-app-fwx-firewall
+	CONFIG_PACKAGE_kmod-nft-fullcone
 )
 if [ "$WITH_KMOD" = "1" ]; then
 	REQUIRED_SYMS+=(CONFIG_PACKAGE_kmod-fwx)
@@ -384,6 +408,7 @@ need_installed() {
 }
 need_installed kmod-rtl837x_gsw "RTL8372N swconfig 驱动，-mod 变体的 5 个 2.5G 口"
 need_installed kmod-rtl8372n_dsa "RTL8372N DSA 驱动，-dsa-mod 变体"
+need_installed kmod-nft-fullcone "fw4 的 FullCone 表达式（防火墙页开关真正生效的前提）"
 if [ "$WITH_KMOD" = "1" ]; then
 	need_installed kmod-fwx "DPI 内核模块"
 fi

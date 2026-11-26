@@ -231,7 +231,18 @@ PPPoE 自然拨不上。这一个问题就解释了「刷完拨号失败」的�
 | 高级设置 | 特征库 / 仪表板配置 / 系统配置 | `-feature` / `-dashboard-setting` / `-system` |
 
 早期漏装 `-network` 和 `-system`，侧栏就会缺「网络设置」整组、「高级设置 → 系统配置」。
-现已补上（`16 个界面包`）。
+现已补上（`17 个界面包`，含 `-firewall`）。
+
+**`-firewall` 为什么现在能装**：读 25.12 的 `fwx_firewall.c` 核实过，它只读写
+`firewall.@defaults[0]` 的 `syn_flood / input / output / forward / fullcone`，
+就是 fw4 的标准 uci，不涉及 fanchmwrt 自有规则模型 —— 之前判定「两套防火墙打架」是错的。
+配套补了两样东西，缺一样这个页面就是摆设：
+
+1. `scripts/patch_fwxd_ext.py` 给 fwxd 补 `get_firewall` / `set_firewall`
+   （24.10.4 的 api 表里根本没有这两个名字）；
+2. `kmod-nft-fullcone`（`patches/fullconenat-nft`）—— 树内只有 xtables 版
+   `kmod-ipt-fullconenat`，而 fw4 是 nftables，**不会加载它**；
+   不补 `nft_fullcone.ko`，`fullcone=1` 写进 uci 也不会生成任何规则。
 
 **这两个包的实际风险（已读 `fwxd/src/fwx_network.c` 核实）**：
 
@@ -277,21 +288,33 @@ v3 还处理了两件容易漏的事：
 
 ### 当前实测缺口（`fwxd` 24.10.4 + packages@3c6ae71）
 
-| 页面 | 缺的接口 | 症状 |
-|---|---|---|
-| 系统监控 › 流量统计 | `get_history_traffic_stats` | 历史流量曲线空 |
-| 上网审计 › 用户白名单 | `get/add/del_record_whitelist` | 该页不可用 |
-| 终端列表 › 详情 | `get_user_daily_summary`、`get_user_parental_control_rules` | 每日汇总、家长控制规则两块空 |
-| 仪表板 | `get_init_status`/`set_init_status` | 只是「模式切换引导」浮层不弹，无功能损失 |
+| 页面 | 缺的接口 | 症状 | 现状 |
+|---|---|---|---|
+| 系统监控 › 流量统计 | `get_history_traffic_stats` | 历史流量曲线空 | 未修（见下） |
+| 上网审计 › 用户白名单 | `get/add/del_record_whitelist` | 该页不可用 | 未修（见下） |
+| 终端列表 › 详情 | `get_user_daily_summary`、`get_user_parental_control_rules` | 每日汇总、家长控制规则两块空 | 未修（见下） |
+| 仪表板 | `get_init_status`/`set_init_status` | 「模式切换引导」浮层不弹 | **已补**（`fwx_ext_compat.c`） |
+| 网络设置 › 防火墙 | `get_firewall`/`set_firewall` | 整页不可用 | **已补**（`fwx_firewall.c`） |
 
-**为什么换版本修不了**：这些名字在 `fwxd` 的 24.10.4 与 25.12 两版里都没有
-（24.10.4 的 api 表里一个都没有；25.12 有其中 7 个）。所以不能靠改 `PKG_REF` 解决。
+**为什么当初换版本修不了**：这些名字在 `fwxd` 的 24.10.4 api 表里一个都没有，
+25.12 有其中 7 个。但 25.12 是给 6.12 写的（`nf_fwx_data` 布局变了：`host` 由指针
+改成 `host[32]` 数组，还多了 `user_ptr` / `session_node`），整套换过去要连内核补丁
+和 `fwx.ko` 一起动，风险远大于收益。
 
-**如果要补齐**：25.12 的 `fwxd`（纯用户态）实现了其中 7 个，且它和 24.10.4 的
-`fwx_netlink.c` 协议层完全一致（结构体/属性名逐项对比无差异），理论上可以只换
-用户态、保留 24.10.4 的 `fwx.ko`。代价是多 4 个依赖（libsqlite3/libmosquitto/
-libcurl/libopenssl）、镜像变大，且新版 `fwxd` 的返回结构可能与旧界面包有细微差异，
-需要实机对比。目前**没有做**，默认仍是 24.10.4 那套。
+**已按「只补用户态、不动内核」的原则修了两处**：
+
+- `get/set_firewall` —— 142 行、只依赖 libuci，和 24.10.4 的 `libfwx_common`
+  源码逐字节相同，可以直接搬。
+- `get/set_init_status` —— 读写 `/etc/fwx_init_status`（这个文件 24.10.4 的
+  Makefile 本来就会装），二十行搞定。
+
+**明确不补的三项及原因**（不是懒，是补了也不对）：
+
+| 缺口 | 为什么不能补 |
+|---|---|
+| 历史流量曲线 | 24.10.4 的 fwxd **不落盘** `global/stats/traffic_YYYY-MM-DD.json`，`get_history_data_root_dir()` 这个函数整个不存在。补接口等于返回空数组，得先加一套每日归档任务 —— 那是新功能，不是修 bug |
+| 用户白名单 | 页面能显示列表，但「不记录」这件事由 **内核侧** `fwx_match_record_whitelist()` 决定，24.10.4 的 `fwx.ko` 没有这段。只补用户态会得到「加了白名单照样记」的假功能，比页面不可用更误导 |
+| 终端详情两块 | 依赖 25.12 整套 `pc_*` 家长控制子系统 + `fwx_user_summary.c`（新文件，依赖每日汇总数据），24.10.4 里没有任何对应实现 |
 
 ## 四、构建失败时的降级开关
 
@@ -316,11 +339,17 @@ libcurl/libopenssl）、镜像变大，且新版 `fwxd` 的返回结构可能与
 ├── .github/workflows/build.yml     # Actions：拉源码 → 打补丁 → 编译 → 发 Release
 ├── scripts/build.sh                # 全部构建逻辑（本地也能跑）
 ├── defconfig/be72-fwx.config       # 上游 defconfig + fanchmwrt 24.10.4 叠加层
-├── patches/                        # 上游 fanchmwrt-24.10.4 自带，原样使用
-│   └── 980-nf-contrack-support-fwx-data.patch   # struct nf_fwx_data + nf_conn 成员
+├── patches/
+│   ├── 980-nf-contrack-support-fwx-data.patch   # 上游 24.10.4 自带：nf_fwx_data + nf_conn 成员
+│   ├── fwxd/                                    # 24.10.4 缺的两个接口（自己写的）
+│   │   ├── fwx_firewall.c / .h                  # get/set_firewall（移植自 25.12，逻辑未改）
+│   │   └── fwx_ext_compat.c                     # get/set_init_status
+│   └── fullconenat-nft/                         # fw4 的 fullcone 表达式内核模块（搬自 25.12）
 ├── scripts/
 │   ├── build.sh
-│   └── patch_kernel_extras.py                   # 锚点式插入 hnat / fwx / fwx.init 改动
+│   ├── patch_kernel_extras.py                   # 锚点式插入 hnat / fwx / fwx.init 改动
+│   ├── patch_fwxd_ext.py                        # 锚点式插入 fwxd 的 4 个分派 + 拷新源文件
+│   └── check_api.py                             # 接口自检：可达页面 → 控制器 → fwxd 实际 api
 └── README.md
 ```
 
@@ -330,7 +359,7 @@ libcurl/libopenssl）、镜像变大，且新版 `fwxd` 的返回结构可能与
 |---|---|---|
 | MT798X-6.6-24.10 | `401e2ba1682314e48aabaa1af28d0e161aa58554` | 底座（RTL8372N / mt_wifi7 / HNAT） |
 | fanchmwrt | `9640f14b256065fd621de479b8d93762141504d3` | **24.10.4 分支**，fwx + fwxd + 主题 |
-| fanchmwrt-packages | `3c6ae7117843b46aa95b57d615874101d2db8700` | 16 个界面包，**与 fwxd 同期（2026-10-19）** |
+| fanchmwrt-packages | `3c6ae7117843b46aa95b57d615874101d2db8700` | 17 个界面包，**与 fwxd 同期（2026-10-19）** |
 | rtl837x-gsw-driver | `a1650c6ac6e658b7ee7594ec8283d94205a001fe` | RTL8372N swconfig 驱动（-mod 变体必需） |
 | rtl837x-dsa-driver | `b14546dbeabf500c287a6ff7ce847919a02d4a26` | RTL8372N DSA 驱动（-dsa-mod 变体必需） |
 
@@ -366,7 +395,7 @@ libcurl/libopenssl）、镜像变大，且新版 `fwxd` 的返回结构可能与
 | 界面包 | 缺失接口 | 表现 |
 |---|---|---|
 | `luci-app-fwx-macfilter` | 9 个（`get_mac_filter_base/time/user`、`set_*`、`add/del_mac_filter_user`、`get_mf_status`） | 页面空白、保存无效 |
-| `luci-app-fwx-dashboard` | 2 个（`get_init_status` / `set_init_status`） | 首页状态异常 |
+| `luci-app-fwx-dashboard` | 2 个（`get_init_status` / `set_init_status`） | 首页状态异常（**已由 `patch_fwxd_ext.py` 补齐**） |
 | `luci-app-fwx-user` | 2 个（`get_parental_control_detail` / `get_system_base_info`） | 家长控制详情打不开 |
 
 所以 `PKG_REF` 锁到 `3c6ae71178`（2026-10-19，与 24.10.4 分支同一天）。核对方式：
@@ -393,7 +422,8 @@ WORKDIR=$HOME/fw-build WITH_KMOD=1 JOBS=$(nproc) bash scripts/build.sh
 
 | 项 | 说明 |
 |---|---|
-| 无线/网络设置页 | 未包含 `luci-app-fwx-wireless/-network/-system/-firewall`，它们按 fanchmwrt 的 schema 写配置，会与 DSA/mtwifi 冲突。这几项仍是 immortalwrt 原生页面，外观由 fanchmwrt 主题外壳统一（`cascade.css`），内容逻辑保持原样 |
+| 无线设置页 | 未包含 `luci-app-fwx-wireless`：它按 fanchmwrt 自家无线 schema 写配置，本机是 mt_wifi7 私有驱动（`mt7992`），配置项对不上。无线仍是 immortalwrt 原生页面（`wireless-mtk`），外观由 fanchmwrt 主题外壳统一 |
+| 网络设置 / 系统配置 / 防火墙 | **已包含** `-network` / `-system` / `-firewall`。前两个只写 `network.lan|wan` 与 `system` 的标准 uci，第三个只写 `firewall.@defaults[0]`，都不碰锐捷私有拓扑 |
 | 侧边栏 | `menu-fanchmwrt.js` 接管整个菜单渲染，未在图标白名单里的条目回落到 `default` 图标；顺序按 LuCI 的 `menu.d` 排 |
 | fastnat | 依赖 `kmod-shortcut-fe`，与 HNAT 互斥，未包含 |
 | 特征库升级 | 需要 fanchmwrt 云端账号；离线用自带 `feature.cfg` |

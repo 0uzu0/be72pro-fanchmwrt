@@ -34,6 +34,10 @@ API_PATTERNS = (
     re.compile(r'(?<![A-Za-z0-9_.])api\s*=\s*"([A-Za-z0-9_]+)"'),
     re.compile(r'"api"\s*:\s*"([A-Za-z0-9_]+)"'),
     re.compile(r"'api'\s*:\s*'([A-Za-z0-9_]+)'"),
+    # 部分控制器（如 luci-app-fwx-firewall）不写 .api = "x"，
+    # 而是先做一层封装：ubus_call("get_firewall", data)。
+    # 只匹配字符串字面量；变量形式（ubus_call(api, data)）静态解析不了，忽略。
+    re.compile(r'ubus_call\(\s*"([A-Za-z0-9_]+)"'),
 )
 FUNC_RE = re.compile(r'function\s+([A-Za-z0-9_]+)\s*\(')
 # entry({...}, cbi("macfilter/rules") ...) / template("fwx_network/lan") / call("fn")
