@@ -88,6 +88,17 @@ ADD_RECORD_INSERT = """
     }
 """
 
+# 白名单查询的前向声明：必须插在 fwx_ubus.c 顶部（第一个调用点在 4198 行，
+# 而分派表声明在 4663 行 —— 插在表前仍然是「声明晚于使用」，
+# -Werror=implicit-function-declaration 会直接判死，build-23 已经栽过一次）
+TOP_DECL_ANCHOR = """extern fwx_status_t g_fwx_status;
+extern void reload_oaf_rule(void);
+"""
+TOP_DECL_INSERT = """
+/* be72: 记录白名单查询（实现见 fwx_ext_compat.c），供下方多个过滤点调用 */
+int fwx_ext_record_whitelisted(const char *mac);
+"""
+
 # 白名单过滤：get_user_records 的两个遍历循环（计数 + 输出），各出现一次
 USER_RECORDS_ANCHOR = """        if (end_time > 0 && record->timestamp > end_time) {
             continue;
@@ -152,10 +163,14 @@ def main():
             die("锚点缺失：api 分派表（上游可能改了表名）")
         if text.count(TABLE_ANCHOR) != 1:
             die("锚点异常：分派表哨兵行出现 %d 次（期望 1）" % text.count(TABLE_ANCHOR))
+        # 顶部前向声明（必须在第一个过滤点之前，见 TOP_DECL_INSERT 注释）
+        if text.count(TOP_DECL_ANCHOR) != 1:
+            die("锚点异常：fwx_ubus.c 顶部声明区锚点出现 %d 次（期望 1）" % text.count(TOP_DECL_ANCHOR))
+        text = text.replace(TOP_DECL_ANCHOR, TOP_DECL_ANCHOR + TOP_DECL_INSERT, 1)
         text = text.replace(DECL_ANCHOR, DECL_BLOCK + DECL_ANCHOR, 1)
         text = text.replace(TABLE_ANCHOR, TABLE_ROWS + TABLE_ANCHOR, 1)
         changed = True
-        print("  [+] fwx_ubus.c：插入 10 行分派（防火墙/引导/历史流量/白名单/汇总/家长控制）")
+        print("  [+] fwx_ubus.c：顶部前向声明 + 10 行分派（防火墙/引导/历史流量/白名单/汇总/家长控制）")
 
     # 白名单过滤：get_user_records 两个循环
     n = text.count(USER_RECORDS_ANCHOR)
@@ -235,6 +250,17 @@ def main():
                 "get_user_daily_summary", "get_user_parental_control_rules"):
         if '"%s", fwx_api_%s' % (api, api) not in final:
             die("自校验失败：分派表里没有 %s" % api)
+
+    # 前向声明必须严格早于第一个调用点（build-23 的教训：声明插在分派表前、
+    # 调用点在更早的函数里，-Werror=implicit-function-declaration 直接编译失败）
+    decl_pos = final.find("int fwx_ext_record_whitelisted(const char *mac);")
+    first_call = min(
+        [p for p in (final.find("fwx_ext_record_whitelisted(record->mac)"),
+                     final.find("fwx_ext_record_whitelisted(node->mac)")) if p >= 0]
+        or [-1])
+    if decl_pos < 0 or first_call < 0 or decl_pos > first_call:
+        die("自校验失败：fwx_ext_record_whitelisted 声明（%s）必须早于首个调用点（%s）" % (
+            decl_pos, first_call))
 
     for name in ("fwx_firewall.c", "fwx_ext_compat.c"):
         if not os.path.isfile(os.path.join(src_dir, name)):
