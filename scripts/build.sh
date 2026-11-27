@@ -138,28 +138,19 @@ mkdir -p "$RJ/package/kernel/fullconenat-nft"
 cp -r "$ROOT/patches/fullconenat-nft/." "$RJ/package/kernel/fullconenat-nft/"
 echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
 
-# 2a-1. 摘掉 kmod-oaf —— 它会和 fwx.ko 死磕
-#   oaf.ko（OpenAppFilter 5.3.3）与 fwx.ko 共用同一个 netlink id 29
-#   （fwx.h 里 FWX_NETLINK_ID 与 OAF_NETLINK_ID 都是 29，fwx 本就是 oaf 的替代实现），
-#   还抢同样的 /proc/net/af_conn 与 /proc/net/af_client 节点。
-#   两个都装进镜像时，先加载的占位、后加载的初始化失败。实测（build-30 日志）：
+# 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
+#   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），
+#   并且自带 /etc/modules.d/oaf，开机会自动加载。
+#   它与 fwx.ko 共用 netlink id 29（fwx.h 里 FWX_NETLINK_ID 与 OAF_NETLINK_ID 都是 29，
+#   fwx 本来就是它的替代实现），还抢同样的 /proc/net/af_conn 与 /proc/net/af_client。
+#   两个同时在镜像里，先加载的占位、后加载的初始化失败。build-30 实测：
 #       proc_dir_entry 'net/af_conn' already registered
 #       netlink_fwx_init 1897 init fwx netlink failed, id=29
 #       fwxd[5272]: Command failed: Not found
 #   → fwxd 拿不到内核 netlink，DPI / 审计 / 黑名单 / 流量统计全部静默失效。
-#   CONFIG_ALL_KMODS=y 会把树里所有 kmod 都选上（包括 oaf），所以不能只改 .config，
-#   要直接摘掉包源码，defconfig 就无法再把它选回来。
-oaf_hit=0
-for mk in $(find package -maxdepth 4 -name Makefile 2>/dev/null); do
-	if grep -qE '^PKG_NAME *:?= *"?(kmod-)?(lib)?oaf"?' "$mk" 2>/dev/null \
-		&& grep -q 'oaf' "$mk" 2>/dev/null; then
-		d=$(dirname "$mk")
-		rm -rf "$d"
-		echo "  [+] 移除 $d（kmod-oaf 与 fwx.ko 争 netlink id 29 / proc 节点）"
-		oaf_hit=1
-	fi
-done
-[ "$oaf_hit" = "1" ] || echo "  [i] 没找到 oaf 包源码（若镜像里仍有 oaf.ko，说明来源变了，需复查）"
+#   处理方式：defconfig 里显式置 not set（make defconfig 会保留显式关闭），
+#   再在下面 make defconfig 之后做一次硬校验。不删 open-app-filter 源码 ——
+#   它同时提供用户态包，删源码有牵动依赖的风险。
 
 # 2b. 给 fwxd 补 24.10.4 缺的两个接口（必须在下面的接口自检之前跑，
 #     否则自检会把「补丁才提供的 api」误报成缺口）：
@@ -275,6 +266,17 @@ if [ "${ALL_KMODS:-1}" = "0" ]; then
 	echo "  ALL_KMODS=0：只编被选中的内核模块（构建更快，镜像更小）"
 fi
 make defconfig >/dev/null
+
+# kmod-oaf 硬校验：万一被 ALL_KMODS 或依赖重新拉回来，这里拦住。
+# 放行它会直接让 fwx.ko 初始化失败（见 2a-1 注释），属于"装了但功能全废"的静默故障。
+if grep -q '^CONFIG_PACKAGE_kmod-oaf=y' .config; then
+	sed -i 's/^CONFIG_PACKAGE_kmod-oaf=y/# CONFIG_PACKAGE_kmod-oaf is not set/' .config
+	echo "  [+] 强制关闭 kmod-oaf（与 fwx.ko 争 netlink id 29）"
+fi
+if grep -q '^CONFIG_PACKAGE_kmod-oaf=y' .config; then
+	echo "!! kmod-oaf 仍被选中：它会和 fwx.ko 抢 netlink id 29，导致 fwx 初始化失败"
+	exit 1
+fi
 
 # 这些包缺任何一个都意味着「界面/后端缺一块」，属于静默功能缺失。
 # 上一版只 warn 就继续，等于把缺功能的固件当成功产物发出去——改为直接失败。
