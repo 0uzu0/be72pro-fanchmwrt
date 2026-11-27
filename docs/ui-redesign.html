@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BE72 Pro 管理界面 · 设计稿 v1</title>
+<title>BE72 Pro 管理界面 · 完整设计稿 v2（按真实功能）</title>
 <style>
 :root{
   --bg:#0d1117; --bg2:#111823; --panel:#151d2b; --panel2:#1a2433;
@@ -13,12 +13,11 @@
   --ok:#3fb950; --ok-soft:rgba(63,185,80,.12);
   --warn:#d29922; --warn-soft:rgba(210,153,34,.12);
   --bad:#f85149; --bad-soft:rgba(248,81,73,.12);
-  --r-lg:16px; --r-md:12px; --r-sm:8px;
-  --sbw:232px;
+  --r-lg:16px; --r-md:12px;
   --ease:cubic-bezier(.32,.72,.24,1);
 }
 [data-theme="light"]{
-  --bg:#f4f6f9; --bg2:#eef1f5; --panel:#ffffff; --panel2:#f8fafc;
+  --bg:#f4f6f9; --bg2:#eef1f5; --panel:#fff; --panel2:#f8fafc;
   --line:rgba(15,23,42,.08); --line2:rgba(15,23,42,.14);
   --text:#0f172a; --text2:#5b6675; --text3:#8a94a3;
   --accent:#0a7cff; --accent-soft:rgba(10,124,255,.08);
@@ -27,647 +26,676 @@
   --bad:#cf222e; --bad-soft:rgba(207,34,46,.08);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
-  background:var(--bg); color:var(--text); font-size:14px; line-height:1.55;
-  -webkit-font-smoothing:antialiased; overflow:hidden;
-}
-.app{display:grid;grid-template-columns:var(--sbw) 1fr;height:100vh}
-
-/* ---------- 侧栏 ---------- */
-.sidebar{
-  background:var(--bg2); border-right:1px solid var(--line);
-  display:flex;flex-direction:column;padding:18px 12px;gap:2px;
-  transition:width .24s var(--ease);
-}
-.brand{display:flex;align-items:center;gap:10px;padding:4px 10px 18px}
-.brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
-  background:linear-gradient(135deg,#2ea8ff,#7c5cff);flex-shrink:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden}
+.app{display:grid;grid-template-columns:236px 1fr;height:100vh}
+.sidebar{background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 10px;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 10px 14px}
+.brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#2ea8ff,#7c5cff);flex-shrink:0}
 .brand .logo svg{width:17px;height:17px;fill:#fff}
-.brand .name{font-size:14.5px;font-weight:600;letter-spacing:.2px}
+.brand .name{font-size:14px;font-weight:600}
 .brand .model{font-size:11px;color:var(--text3);margin-top:-2px}
-.nav-group{font-size:11px;color:var(--text3);padding:14px 12px 6px;letter-spacing:.6px}
-.nav-item{
-  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;
-  color:var(--text2);cursor:pointer;position:relative;font-size:13.5px;
-  transition:background .15s,color .15s;user-select:none;
-}
-.nav-item svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;flex-shrink:0;opacity:.85}
+.nav-group{font-size:11px;color:var(--text3);padding:12px 12px 5px;letter-spacing:.5px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:9px;color:var(--text2);
+  cursor:pointer;position:relative;font-size:13px;transition:background .15s,color .15s;user-select:none}
+.nav-item svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;flex-shrink:0;opacity:.85}
 .nav-item:hover{background:var(--panel);color:var(--text)}
 .nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:500}
-.nav-item.active::before{
-  content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);
-  width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--accent);
-}
-.nav-item .badge{margin-left:auto;font-size:11px;padding:1px 7px;border-radius:99px;
-  background:var(--bad-soft);color:var(--bad);font-weight:500}
-.sidebar .foot{margin-top:auto;padding:12px 10px 0;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center}
-.theme-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--line2);background:transparent;
-  color:var(--text2);cursor:pointer;display:grid;place-items:center;transition:.15s}
-.theme-btn:hover{color:var(--text);border-color:var(--text3)}
-.theme-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7}
-.ver{font-size:11px;color:var(--text3);margin-left:auto}
-
-/* ---------- 主区 ---------- */
+.nav-item.active::before{content:"";position:absolute;left:-10px;top:50%;transform:translateY(-50%);
+  width:3px;height:16px;border-radius:0 3px 3px 0;background:var(--accent)}
+.nav-item .badge{margin-left:auto;font-size:10.5px;padding:0 6px;border-radius:99px;background:var(--bad-soft);color:var(--bad)}
+.sidebar .foot{margin-top:auto;padding:12px 10px 0;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-shrink:0}
 .main{display:flex;flex-direction:column;overflow:hidden}
-.topbar{
-  height:60px;display:flex;align-items:center;gap:14px;padding:0 26px;
-  border-bottom:1px solid var(--line);flex-shrink:0;background:var(--bg);
-}
-.topbar h1{font-size:16px;font-weight:600}
-.topbar .sub{font-size:12px;color:var(--text3)}
-.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 11px;border-radius:99px;
-  border:1px solid var(--line2);color:var(--text2)}
+.topbar{height:58px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--line);flex-shrink:0}
+.topbar h1{font-size:15.5px;font-weight:600}
+.topbar .sub{font-size:11.5px;color:var(--text3)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line2);color:var(--text2)}
 .pill .dot{width:6px;height:6px;border-radius:99px;background:var(--ok)}
 .pill.ok{color:var(--ok);border-color:var(--ok-soft);background:var(--ok-soft)}
-.pill.warn{color:var(--warn);border-color:var(--warn-soft);background:var(--warn-soft)}
-.pill .dot.warn{background:var(--warn)}
 .spacer{flex:1}
-.avatar{width:30px;height:30px;border-radius:99px;background:var(--panel2);border:1px solid var(--line2);
-  display:grid;place-items:center;font-size:12px;color:var(--text2);cursor:pointer}
-
-.content{flex:1;overflow-y:auto;padding:24px 26px 40px;scroll-behavior:smooth}
+.theme-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--text2);cursor:pointer;display:grid;place-items:center}
+.theme-btn:hover{color:var(--text)}
+.theme-btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7}
+.ver{font-size:11px;color:var(--text3)}
+.content{flex:1;overflow-y:auto;padding:22px 24px 44px}
 .view{display:none}
-.view.active{display:block;animation:fadeUp .22s var(--ease)}
-@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-
-/* ---------- 卡片与网格 ---------- */
-.grid{display:grid;gap:14px}
-.g4{grid-template-columns:repeat(4,1fr)}
-.g3{grid-template-columns:repeat(3,1fr)}
-.g2{grid-template-columns:repeat(2,1fr)}
-.col-2{display:grid;grid-template-columns:1.6fr 1fr;gap:14px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 20px;
-  transition:border-color .15s,transform .15s}
+.view.active{display:block;animation:fadeUp .2s var(--ease)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.corr{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:11.5px;color:var(--text3);
+  border:1px dashed var(--line2);border-radius:9px;padding:8px 12px;margin-bottom:16px;letter-spacing:.1px}
+.corr b{color:var(--text2);font-weight:500}
+.corr code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--accent);
+  background:var(--accent-soft);padding:1px 6px;border-radius:5px}
+.grid{display:grid;gap:13px}
+.g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+.col-2{display:grid;grid-template-columns:1.55fr 1fr;gap:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:17px 19px;transition:border-color .15s}
 .card:hover{border-color:var(--line2)}
-.card h3{font-size:13px;font-weight:500;color:var(--text2);margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.card h3 .more{margin-left:auto;font-size:12px;color:var(--accent);cursor:pointer;font-weight:400}
-
-.kpi{font-size:26px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
-.kpi small{font-size:13px;color:var(--text3);font-weight:400;margin-left:3px}
-.kpi-label{font-size:12px;color:var(--text3);margin-bottom:6px}
-.trend{font-size:12px;margin-top:8px;display:inline-flex;align-items:center;gap:4px}
-.trend.up{color:var(--bad)} .trend.down{color:var(--ok)}
-[data-theme="light"] .trend.up{color:#cf222e} [data-theme="light"] .trend.down{color:#1a7f37}
-
-/* ---------- 条形 --- */
-.bars{display:flex;flex-direction:column;gap:13px}
-.bar-row{display:flex;align-items:center;gap:12px;font-size:13px}
-.bar-row .nm{width:88px;flex-shrink:0;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bar-row .track{flex:1;height:7px;background:var(--panel2);border-radius:99px;overflow:hidden}
-.bar-row .fill{height:100%;border-radius:99px;background:var(--accent);
-  transform-origin:left;animation:grow .5s var(--ease) backwards}
-.bar-row:nth-child(1) .fill{animation-delay:.05s}
-.bar-row:nth-child(2) .fill{animation-delay:.1s}
-.bar-row:nth-child(3) .fill{animation-delay:.15s}
-.bar-row:nth-child(4) .fill{animation-delay:.2s}
-.bar-row:nth-child(5) .fill{animation-delay:.25s}
+.card h3{font-size:12.5px;font-weight:500;color:var(--text2);margin-bottom:13px;display:flex;align-items:center;gap:8px}
+.card h3 .more{margin-left:auto;font-size:11.5px;color:var(--accent);cursor:pointer;font-weight:400}
+.kpi{font-size:25px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.kpi small{font-size:12.5px;color:var(--text3);font-weight:400;margin-left:2px}
+.kpi-label{font-size:11.5px;color:var(--text3);margin-bottom:5px}
+.sub-text{font-size:11.5px;color:var(--text3);margin-top:7px}
+.bars{display:flex;flex-direction:column;gap:11px}
+.bar-row{display:flex;align-items:center;gap:11px;font-size:12.5px}
+.bar-row .nm{width:86px;flex-shrink:0;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-row .track{flex:1;height:6px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.bar-row .fill{height:100%;border-radius:99px;background:var(--accent);transform-origin:left;animation:grow .45s var(--ease) backwards}
 @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-.bar-row .val{width:52px;text-align:right;color:var(--text3);font-size:12px;font-variant-numeric:tabular-nums}
-
-/* ---------- 列表 ---------- */
-.dev-list{display:flex;flex-direction:column}
-.dev-row{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line)}
+.bar-row .val{width:64px;text-align:right;color:var(--text3);font-size:11.5px;font-variant-numeric:tabular-nums}
+.dev-row{display:flex;align-items:center;gap:11px;padding:10px 2px;border-bottom:1px solid var(--line)}
 .dev-row:last-child{border-bottom:none}
-.dev-ico{width:34px;height:34px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;flex-shrink:0}
-.dev-ico svg{width:16px;height:16px;fill:none;stroke:var(--text2);stroke-width:1.6}
+.dev-ico{width:32px;height:32px;border-radius:9px;background:var(--panel2);display:grid;place-items:center;flex-shrink:0}
+.dev-ico svg{width:15px;height:15px;fill:none;stroke:var(--text2);stroke-width:1.6}
 .dev-main{min-width:0}
-.dev-main .nm{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dev-main .meta{font-size:11.5px;color:var(--text3);font-variant-numeric:tabular-nums}
-.dev-traffic{text-align:right;font-size:12px;color:var(--text2);font-variant-numeric:tabular-nums}
-.dev-traffic small{display:block;color:var(--text3);font-size:11px}
+.dev-main .nm{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev-main .meta{font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums}
+.dev-traffic{text-align:right;font-size:11.5px;color:var(--text2);font-variant-numeric:tabular-nums;margin-left:auto}
+.dev-traffic small{display:block;color:var(--text3);font-size:10.5px}
 .status-dot{width:7px;height:7px;border-radius:99px;background:var(--ok);flex-shrink:0}
 .status-dot.off{background:var(--text3)}
-
-/* ---------- 表格 ---------- */
-.tbl{width:100%;border-collapse:collapse;font-size:13px}
-.tbl th{text-align:left;font-weight:500;font-size:12px;color:var(--text3);padding:0 10px 10px;border-bottom:1px solid var(--line)}
-.tbl td{padding:11px 10px;border-bottom:1px solid var(--line);color:var(--text2)}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{text-align:left;font-weight:500;font-size:11.5px;color:var(--text3);padding:0 9px 9px;border-bottom:1px solid var(--line)}
+.tbl td{padding:10px 9px;border-bottom:1px solid var(--line);color:var(--text2)}
 .tbl tr:last-child td{border-bottom:none}
-.tbl tr{transition:background .12s}
 .tbl tbody tr:hover{background:var(--panel2)}
-.tag{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:6px;background:var(--panel2);color:var(--text2)}
+.tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:6px;background:var(--panel2);color:var(--text2);white-space:nowrap}
 .tag.blue{background:var(--accent-soft);color:var(--accent)}
 .tag.green{background:var(--ok-soft);color:var(--ok)}
 .tag.red{background:var(--bad-soft);color:var(--bad)}
-
-/* ---------- 开关 ---------- */
-.switch{position:relative;width:38px;height:22px;flex-shrink:0;cursor:pointer}
+.tag.amber{background:var(--warn-soft);color:var(--warn)}
+.switch{position:relative;width:36px;height:21px;flex-shrink:0;cursor:pointer}
 .switch input{display:none}
-.switch .sl{position:absolute;inset:0;border-radius:99px;background:var(--panel2);
-  border:1px solid var(--line2);transition:.18s}
-.switch .sl::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:99px;
-  background:var(--text3);transition:.18s var(--ease)}
+.switch .sl{position:absolute;inset:0;border-radius:99px;background:var(--panel2);border:1px solid var(--line2);transition:.18s}
+.switch .sl::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:99px;background:var(--text3);transition:.18s var(--ease)}
 .switch input:checked + .sl{background:var(--accent);border-color:var(--accent)}
-.switch input:checked + .sl::after{transform:translateX(16px);background:#fff}
-
-/* ---------- 按钮 ---------- */
-.btn{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:9px;font-size:13px;
-  border:1px solid var(--line2);background:transparent;color:var(--text);cursor:pointer;
-  transition:.15s;font-family:inherit}
+.switch input:checked + .sl::after{transform:translateX(15px);background:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:8px;font-size:12.5px;
+  border:1px solid var(--line2);background:transparent;color:var(--text);cursor:pointer;transition:.15s;font-family:inherit}
 .btn:hover{border-color:var(--text3);background:var(--panel2)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
 .btn.primary:hover{filter:brightness(1.08)}
-.btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8}
-
-/* ---------- 应用过滤页 ---------- */
-.tabs{display:inline-flex;gap:4px;background:var(--panel);border:1px solid var(--line);
-  border-radius:11px;padding:3px;margin-bottom:18px}
-.tab{padding:6px 14px;border-radius:8px;font-size:12.5px;color:var(--text2);cursor:pointer;transition:.15s;user-select:none}
+.btn.danger{color:var(--bad);border-color:var(--bad-soft)}
+.btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8}
+.tabs{display:inline-flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;margin-bottom:15px}
+.tab{padding:5px 13px;border-radius:7px;font-size:12px;color:var(--text2);cursor:pointer;transition:.15s;user-select:none}
 .tab:hover{color:var(--text)}
-.tab.active{background:var(--panel2);color:var(--text);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.2)}
-
-.app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.app-item{display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--line);
-  border-radius:12px;background:var(--panel);transition:.15s}
-.app-item:hover{border-color:var(--line2);transform:translateY(-1px)}
-.app-logo{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:13px;
-  font-weight:600;color:#fff;flex-shrink:0}
-.app-item .nm{font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.app-item .cat{font-size:11px;color:var(--text3)}
-.app-item .switch{margin-left:auto}
-
-/* ---------- 抽屉 ---------- */
-.drawer-mask{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;
-  transition:opacity .22s;z-index:40}
+.tab.active{background:var(--panel2);color:var(--text);font-weight:500}
+.form-grid{display:grid;grid-template-columns:150px 1fr;gap:13px 16px;align-items:center;font-size:13px}
+.form-grid label{color:var(--text2);font-size:12.5px;text-align:right}
+.inp{width:100%;padding:7px 11px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);
+  color:var(--text);font-size:13px;font-family:inherit;transition:.15s}
+.inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.hint{font-size:11.5px;color:var(--text3);background:var(--panel2);border-left:3px solid var(--line2);
+  border-radius:0 8px 8px 0;padding:8px 12px;margin-top:13px;line-height:1.6}
+.hint b{color:var(--text2);font-weight:500}
+.drawer-mask{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.2s;z-index:40}
 .drawer-mask.open{opacity:1;pointer-events:auto}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:92vw;background:var(--panel);
-  border-left:1px solid var(--line2);transform:translateX(100%);transition:transform .26s var(--ease);
-  z-index:41;display:flex;flex-direction:column}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:430px;max-width:92vw;background:var(--panel);
+  border-left:1px solid var(--line2);transform:translateX(100%);transition:transform .24s var(--ease);z-index:41;display:flex;flex-direction:column}
 .drawer.open{transform:none}
-.drawer-hd{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
-.drawer-bd{padding:20px 22px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:18px}
-.kv{display:flex;justify-content:space-between;font-size:13px;padding:9px 0;border-bottom:1px solid var(--line)}
+.drawer-hd{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px}
+.drawer-bd{padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px}
+.kv{display:flex;justify-content:space-between;font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--line)}
 .kv:last-child{border:none}
 .kv span:first-child{color:var(--text3)}
-.kv span:last-child{font-variant-numeric:tabular-nums}
-.close-x{margin-left:auto;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);
-  background:transparent;color:var(--text2);cursor:pointer;display:grid;place-items:center}
-.close-x:hover{color:var(--text)}
-
-/* ---------- 说明块 ---------- */
-.hint{font-size:12px;color:var(--text3);background:var(--panel2);border:1px dashed var(--line2);
-  border-radius:10px;padding:10px 14px;margin-top:14px;line-height:1.6}
-.hint b{color:var(--text2);font-weight:500}
-
-@media (max-width:1100px){
-  .app{grid-template-columns:64px 1fr}
-  .sidebar{padding:14px 8px}
+.close-x{margin-left:auto;width:28px;height:28px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--text2);cursor:pointer;display:grid;place-items:center}
+@media(max-width:1150px){
+  .app{grid-template-columns:62px 1fr}
   .brand .name,.brand .model,.nav-group,.nav-item span,.ver{display:none}
-  .nav-item{justify-content:center;padding:11px}
-  .nav-item.active::before{display:none}
-  .g4{grid-template-columns:repeat(2,1fr)}
-  .col-2{grid-template-columns:1fr}
-  .app-grid{grid-template-columns:repeat(2,1fr)}
+  .nav-item{justify-content:center;padding:10px}.nav-item.active::before{display:none}
+  .g4{grid-template-columns:repeat(2,1fr)}.col-2{grid-template-columns:1fr}.g3{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
 <div class="app">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5zm0 2.3L18.8 8 12 11.7 5.2 8 12 4.3zM5 9.8l6 3.4v6.5l-6-3.4V9.8zm8 9.9v-6.5l6-3.4v6.5l-6 3.4z"/></svg></div>
-      <div><div class="name">BE72 Pro</div><div class="model">FanchmWrt · 锐捷</div></div>
-    </div>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5zm0 2.3L18.8 8 12 11.7 5.2 8 12 4.3zM5 9.8l6 3.4v6.5l-6-3.4V9.8zm8 9.9v-6.5l6-3.4v6.5l-6 3.4z"/></svg></div>
+    <div><div class="name">BE72 Pro</div><div class="model">FanchmWrt · 锐捷</div></div>
+  </div>
+  <div class="nav-group">概览</div>
+  <div class="nav-item active" data-view="dash"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>仪表板</span></div>
+  <div class="nav-item" data-view="dashset"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M4 12h3M17 12h3M12 4v3M12 17v3"/></svg><span>仪表板设置</span></div>
+  <div class="nav-group">终端与审计</div>
+  <div class="nav-item" data-view="users"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>终端列表</span><span class="badge">12</span></div>
+  <div class="nav-item" data-view="records"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h10"/></svg><span>上网记录</span></div>
+  <div class="nav-item" data-view="rwhitelist"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>记录白名单</span></div>
+  <div class="nav-item" data-view="traffic"><svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-6M22 18v-9"/></svg><span>流量统计</span></div>
+  <div class="nav-item" data-view="session"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg><span>会话统计</span></div>
+  <div class="nav-group">上网管控</div>
+  <div class="nav-item" data-view="appfilter"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>应用过滤</span></div>
+  <div class="nav-item" data-view="macfilter"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"/><circle cx="18" cy="17" r="3"/></svg><span>MAC 过滤</span></div>
+  <div class="nav-item" data-view="blacklist"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="m6.5 6.5 11 11"/></svg><span>设备黑名单</span></div>
+  <div class="nav-group">网络</div>
+  <div class="nav-item" data-view="lan"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 16v4M17 16v4"/></svg><span>LAN 设置</span></div>
+  <div class="nav-item" data-view="wan"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a14 14 0 0 1 0 16 14 14 0 0 1 0-16z"/></svg><span>WAN 设置</span></div>
+  <div class="nav-item" data-view="workmode"><svg viewBox="0 0 24 24"><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><circle cx="12" cy="12" r="2.5"/></svg><span>工作模式</span></div>
+  <div class="nav-item" data-view="firewall"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v5c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-3z"/></svg><span>防火墙</span></div>
+  <div class="nav-group">系统</div>
+  <div class="nav-item" data-view="system"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4z"/></svg><span>系统设置</span></div>
+  <div class="nav-item" data-view="feature"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="m3 13 9 5 9-5"/></svg><span>特征库</span></div>
+  <div class="nav-item" data-view="appcenter"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg><span>应用中心</span></div>
+  <div class="foot">
+    <button class="theme-btn" onclick="toggleTheme()" title="明暗切换"><svg id="ico-theme" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+    <span class="ver">完整设计稿 v2</span>
+  </div>
+</aside>
 
-    <div class="nav-group">总览</div>
-    <div class="nav-item active" data-view="dash">
-      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-      <span>仪表板</span>
-    </div>
-    <div class="nav-group">上网管理</div>
-    <div class="nav-item" data-view="devices">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
-      <span>终端管理</span><span class="badge">12</span>
-    </div>
-    <div class="nav-item" data-view="apps">
-      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>
-      <span>应用管控</span>
-    </div>
-    <div class="nav-item" data-view="audit">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <span>上网审计</span>
-    </div>
-    <div class="nav-group">网络</div>
-    <div class="nav-item" data-view="fw">
-      <svg viewBox="0 0 24 24"><path d="M12 3 4 6v5c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-3z"/></svg>
-      <span>防火墙</span>
-    </div>
-    <div class="nav-item" data-view="sys">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.7h4l.4-2.7a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>
-      <span>系统设置</span>
-    </div>
+<div class="main">
+  <header class="topbar">
+    <div><h1 id="pg-title">仪表板</h1><div class="sub" id="pg-sub">按真实功能重绘 · 字段与固件一一对应</div></div>
+    <div class="spacer"></div>
+    <span class="pill ok"><span class="dot"></span>WAN · PPPoE 已连接</span>
+    <span class="pill">12 台在线</span>
+    <button class="theme-btn" onclick="toggleTheme()"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></button>
+  </header>
 
-    <div class="foot">
-      <button class="theme-btn" onclick="toggleTheme()" title="切换主题">
-        <svg id="ico-theme" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
-      </button>
-      <span class="ver">v26.11 · 设计稿</span>
-    </div>
-  </aside>
+  <div class="content">
 
-  <div class="main">
-    <header class="topbar">
-      <div>
-        <h1 id="pg-title">仪表板</h1>
-        <div class="sub" id="pg-sub">网络运行正常 · 已于 2 分钟前同步</div>
+  <section class="view active" id="v-dash">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-dashboard / dashboard.htm · <b>数据来源</b> <code>get_dashboard_common</code>（system_status / network_status / interface_traffic / active_app / active_host）</div>
+    <div class="grid g4" style="margin-bottom:13px">
+      <div class="card"><div class="kpi-label">CPU 占用</div><div class="kpi">9<small>%</small></div><div class="sub-text">4 × A53 @ 2.6 GHz</div></div>
+      <div class="card"><div class="kpi-label">内存占用</div><div class="kpi">42<small>%</small></div><div class="sub-text">216 / 512 MB</div></div>
+      <div class="card"><div class="kpi-label">在线终端</div><div class="kpi">12<small>台</small></div><div class="sub-text">共 18 台已知设备</div></div>
+      <div class="card"><div class="kpi-label">运行时长</div><div class="kpi" style="font-size:20px">3 天 7 时</div><div class="sub-text">上次重启 11-24 05:20</div></div>
+    </div>
+    <div class="col-2" style="margin-bottom:13px">
+      <div class="card">
+        <h3>接口流量</h3>
+        <div class="bars">
+          <div class="bar-row"><span class="nm">wan (pppoe)</span><div class="track"><div class="fill" style="width:66%"></div></div><span class="val">↓86.4 M</span></div>
+          <div class="bar-row"><span class="nm">br-lan</span><div class="track"><div class="fill" style="width:58%;background:#7c5cff"></div></div><span class="val">↑23.1 M</span></div>
+          <div class="bar-row"><span class="nm">eth2 (2.5G)</span><div class="track"><div class="fill" style="width:22%;background:#3fb950"></div></div><span class="val">↓12.0 M</span></div>
+        </div>
+        <div class="hint"><b>字段：</b>interface_traffic[].rx / tx（逐接口实时值）</div>
       </div>
-      <div class="spacer"></div>
-      <span class="pill ok"><span class="dot"></span>WAN · PPPoE 已连接 268 Mbps</span>
-      <span class="pill">12 台在线</span>
-      <div class="avatar">管</div>
-    </header>
-
-    <div class="content">
-
-      <!-- ============ 仪表板 ============ -->
-      <section class="view active" id="v-dash">
-        <div class="grid g4" style="margin-bottom:14px">
-          <div class="card">
-            <div class="kpi-label">今日下载</div>
-            <div class="kpi">86.4<small>GB</small></div>
-            <div class="trend up">↑ 12.6% 较昨日</div>
-          </div>
-          <div class="card">
-            <div class="kpi-label">今日上传</div>
-            <div class="kpi">23.1<small>GB</small></div>
-            <div class="trend down">↓ 4.2% 较昨日</div>
-          </div>
-          <div class="card">
-            <div class="kpi-label">活跃终端</div>
-            <div class="kpi">12<small>/ 18</small></div>
-            <div class="trend" style="color:var(--text3)">3 台有线 · 9 台无线</div>
-          </div>
-          <div class="card">
-            <div class="kpi-label">系统负载</div>
-            <div class="kpi">0.34<small>CPU</small></div>
-            <div class="trend" style="color:var(--text3)">内存 42% · 温度 51°C</div>
-          </div>
-        </div>
-
-        <div class="col-2" style="margin-bottom:14px">
-          <div class="card">
-            <h3>应用流量排行 <span class="more">查看全部</span></h3>
-            <div class="bars">
-              <div class="bar-row"><span class="nm">抖音</span><div class="track"><div class="fill" style="width:78%"></div></div><span class="val">21.3 G</span></div>
-              <div class="bar-row"><span class="nm">哔哩哔哩</span><div class="track"><div class="fill" style="width:56%;background:#7c5cff"></div></div><span class="val">15.2 G</span></div>
-              <div class="bar-row"><span class="nm">Steam</span><div class="track"><div class="fill" style="width:41%;background:#3fb950"></div></div><span class="val">11.0 G</span></div>
-              <div class="bar-row"><span class="nm">微信</span><div class="track"><div class="fill" style="width:22%;background:#d29922"></div></div><span class="val">6.1 G</span></div>
-              <div class="bar-row"><span class="nm">DeepSeek</span><div class="track"><div class="fill" style="width:12%;background:#f85149"></div></div><span class="val">3.3 G</span></div>
-            </div>
-            <div class="hint">数据来自 DPI 特征库 v26.4.10（305 个应用），仅统计非加速首包与归档数据。</div>
-          </div>
-
-          <div class="card">
-            <h3>在线终端 <span class="more" onclick="go('devices')">全部</span></h3>
-            <div class="dev-list">
-              <div class="dev-row">
-                <div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="13" rx="2"/><path d="M9 21h6M12 16v5"/></svg></div>
-                <div class="dev-main"><div class="nm">书房 MacBook</div><div class="meta">192.168.1.102 · 5G</div></div>
-                <div class="dev-traffic">4.2 MB/s<small>↓ 124 MB</small></div>
-                <span class="status-dot"></span>
-              </div>
-              <div class="dev-row">
-                <div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div>
-                <div class="dev-main"><div class="nm">客厅电视</div><div class="meta">192.168.1.110 · 2.4G</div></div>
-                <div class="dev-traffic">1.8 MB/s<small>↓ 62 MB</small></div>
-                <span class="status-dot"></span>
-              </div>
-              <div class="dev-row">
-                <div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 18v3M16 18v3"/></svg></div>
-                <div class="dev-main"><div class="nm">书房 NAS</div><div class="meta">192.168.1.150 · 有线</div></div>
-                <div class="dev-traffic">12 KB/s<small>↓ 3.1 MB</small></div>
-                <span class="status-dot"></span>
-              </div>
-              <div class="dev-row">
-                <div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div>
-                <div class="dev-main"><div class="nm">孩子 iPad</div><div class="meta">192.168.1.121 · 5G</div></div>
-                <div class="dev-traffic" style="color:var(--text3)">已限速<small>18:00–21:00</small></div>
-                <span class="status-dot"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid g3">
-          <div class="card">
-            <h3>WAN 状态</h3>
-            <div class="kv"><span>连接类型</span><span>PPPoE</span></div>
-            <div class="kv"><span>公网 IP</span><span>112.65.**:216</span></div>
-            <div class="kv"><span>运行时长</span><span>3 天 7 小时</span></div>
-            <div class="kv"><span>FullCone NAT</span><span class="tag green">已启用</span></div>
-          </div>
-          <div class="card">
-            <h3>今日告警</h3>
-            <div class="kv"><span>应用拦截</span><span>142 次</span></div>
-            <div class="kv"><span>新设备接入</span><span>2 台</span></div>
-            <div class="kv"><span>异常流量</span><span class="tag">无</span></div>
-            <div class="kv"><span>特征库</span><span>v26.4.10</span></div>
-          </div>
-          <div class="card">
-            <h3>快速操作</h3>
-            <div style="display:flex;flex-direction:column;gap:9px">
-              <button class="btn primary" onclick="go('apps')"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增应用管控策略</button>
-              <button class="btn" onclick="go('devices')"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>管理上网终端</button>
-              <button class="btn" onclick="go('fw')"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v5c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-3z"/></svg>防火墙与 NAT</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ 终端管理 ============ -->
-      <section class="view" id="v-devices">
-        <div class="row-between" style="display:flex;align-items:center;margin-bottom:16px;gap:10px">
-          <div class="tabs" style="margin:0">
-            <div class="tab active">全部 18</div><div class="tab">在线 12</div><div class="tab">离线 6</div><div class="tab">受限 1</div>
-          </div>
-          <div class="spacer"></div>
-          <button class="btn"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>搜索设备</button>
-        </div>
-
-        <div class="app-grid" style="grid-template-columns:repeat(3,1fr)">
-          <div class="card" style="cursor:pointer" onclick="openDrawer()">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-              <div class="dev-ico" style="width:40px;height:40px"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="13" rx="2"/><path d="M9 21h6M12 16v5"/></svg></div>
-              <div class="dev-main"><div class="nm">书房 MacBook</div><div class="meta">192.168.1.102 · 5G 866 Mbps</div></div>
-              <span class="status-dot"></span>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span class="tag">今日 4.6 GB</span><span class="tag">抖音 62%</span><span class="tag blue">已加白名单</span>
-            </div>
-          </div>
-          <div class="card" style="cursor:pointer" onclick="openDrawer()">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-              <div class="dev-ico" style="width:40px;height:40px"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div>
-              <div class="dev-main"><div class="nm">孩子 iPad</div><div class="meta">192.168.1.121 · 5G 433 Mbps</div></div>
-              <span class="status-dot"></span>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span class="tag">今日 1.2 GB</span><span class="tag red">时段受限 18–21</span><span class="tag">游戏拦截 12 次</span>
-            </div>
-          </div>
-          <div class="card" style="cursor:pointer" onclick="openDrawer()">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-              <div class="dev-ico" style="width:40px;height:40px"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 18v3M16 18v3"/></svg></div>
-              <div class="dev-main"><div class="nm">书房 NAS</div><div class="meta">192.168.1.150 · 有线 2.5G</div></div>
-              <span class="status-dot"></span>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span class="tag">今日 68 MB</span><span class="tag">samba 共享</span><span class="tag green">不限速</span>
-            </div>
-          </div>
-          <div class="card" style="cursor:pointer">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-              <div class="dev-ico" style="width:40px;height:40px"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div>
-              <div class="dev-main"><div class="nm">客厅电视</div><div class="meta">192.168.1.110 · 2.4G 144 Mbps</div></div>
-              <span class="status-dot"></span>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span class="tag">今日 2.8 GB</span><span class="tag">哔哩哔哩 71%</span>
-            </div>
-          </div>
-          <div class="card" style="opacity:.6">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-              <div class="dev-ico" style="width:40px;height:40px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg></div>
-              <div class="dev-main"><div class="nm">扫地机器人</div><div class="meta">192.168.1.132 · 离线 2 小时</div></div>
-              <span class="status-dot off"></span>
-            </div>
-            <div style="display:flex;gap:8px"><span class="tag">今晨 3 MB</span></div>
-          </div>
-          <div class="card" style="border-style:dashed;display:grid;place-items:center;min-height:104px;cursor:pointer;color:var(--text3)">
-            <div style="text-align:center;font-size:13px">
-              <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;display:block;margin:0 auto 6px"><path d="M12 5v14M5 12h14"/></svg>
-              手动添加设备
-            </div>
-          </div>
-        </div>
-        <div class="hint"><b>跳转体验：</b>点击卡片不刷新页面，右侧抽屉滑出详情（终端的今日流量、应用分布、管控规则、实时访问）。关闭后回到原位，滚动位置不丢失。</div>
-      </section>
-
-      <!-- ============ 应用管控 ============ -->
-      <section class="view" id="v-apps">
-        <div class="tabs">
-          <div class="tab active">游戏 12</div><div class="tab">视频 18</div><div class="tab">社交 14</div>
-          <div class="tab">购物 9</div><div class="tab">音乐 6</div><div class="tab">全部 305</div>
-        </div>
-        <div class="grid g2" style="margin-bottom:14px">
-          <div class="card" style="display:flex;align-items:center;gap:14px">
-            <div style="flex:1">
-              <div style="font-size:13.5px;font-weight:500;margin-bottom:3px">应用过滤总开关</div>
-              <div style="font-size:12px;color:var(--text3)">对 3 台受管控设备生效，特征库 v26.4.10</div>
-            </div>
-            <label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
-          </div>
-          <div class="card" style="display:flex;align-items:center;gap:14px">
-            <div style="flex:1">
-              <div style="font-size:13.5px;font-weight:500;margin-bottom:3px">游戏时段管控</div>
-              <div style="font-size:12px;color:var(--text3)">工作日 20:00–22:00 允许，其余时间拦截</div>
-            </div>
-            <label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
-          </div>
-        </div>
-
-        <div class="app-grid">
-          <div class="app-item">
-            <div class="app-logo" style="background:#ef4444">王</div>
-            <div style="min-width:0"><div class="nm">王者荣耀</div><div class="cat">游戏</div></div>
-            <label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#f59e0b">英</div>
-            <div style="min-width:0"><div class="nm">英雄联盟手游</div><div class="cat">游戏</div></div>
-            <label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#06b6d4">蛋</div>
-            <div style="min-width:0"><div class="nm">蛋仔派对</div><div class="cat">游戏</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#111">抖</div>
-            <div style="min-width:0"><div class="nm">抖音</div><div class="cat">视频</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#fb7299">B</div>
-            <div style="min-width:0"><div class="nm">哔哩哔哩</div><div class="cat">视频</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#22c55e">微</div>
-            <div style="min-width:0"><div class="nm">微信</div><div class="cat">社交</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#3b82f6">D</div>
-            <div style="min-width:0"><div class="nm">DeepSeek</div><div class="cat">工具</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#f97316">淘</div>
-            <div style="min-width:0"><div class="nm">淘宝</div><div class="cat">购物</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-          <div class="app-item">
-            <div class="app-logo" style="background:#8b5cf6">豆</div>
-            <div style="min-width:0"><div class="nm">豆包</div><div class="cat">工具</div></div>
-            <label class="switch"><input type="checkbox"><span class="sl"></span></label>
-          </div>
-        </div>
-        <div class="hint"><b>设计要点：</b>应用图标用品牌色块 + 首字（无外部图片依赖）；开关即改即生效，无需「保存」按钮；分类标签切换零刷新。</div>
-      </section>
-
-      <!-- ============ 上网审计 ============ -->
-      <section class="view" id="v-audit">
-        <div class="tabs">
-          <div class="tab active">实时访问</div><div class="tab">上网记录</div><div class="tab">应用记录</div><div class="tab">白名单 2</div>
-        </div>
-        <div class="card" style="padding:6px 20px 10px">
-          <table class="tbl">
-            <thead><tr><th>时间</th><th>设备</th><th>应用 / 域名</th><th>地址</th><th>时长</th><th>状态</th></tr></thead>
-            <tbody>
-              <tr><td>12:41:08</td><td>书房 MacBook</td><td><span class="tag blue">哔哩哔哩</span> bilibili.com</td><td>203.107.**:14</td><td>进行中</td><td><span class="tag green">允许</span></td></tr>
-              <tr><td>12:40:52</td><td>孩子 iPad</td><td><span class="tag red">王者荣耀</span> 游戏服</td><td>139.199.**:80</td><td>—</td><td><span class="tag red">已拦截</span></td></tr>
-              <tr><td>12:40:31</td><td>客厅电视</td><td><span class="tag blue">哔哩哔哩</span> upos-sz</td><td>112.65.**:23</td><td>进行中</td><td><span class="tag green">允许</span></td></tr>
-              <tr><td>12:39:47</td><td>孩子 iPad</td><td><span class="tag">抖音</span> feed</td><td>106.11.**:6</td><td>12 分钟</td><td><span class="tag red">已拦截</span></td></tr>
-              <tr><td>12:38:12</td><td>书房 MacBook</td><td><span class="tag">DeepSeek</span> api</td><td>47.94.**:11</td><td>3 分钟</td><td><span class="tag green">允许</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="hint"><b>数据来源：</b>实时访问来自内核 DPI 钩子（新连接首包识别）；已被记录白名单排除的设备不在此出现。</div>
-      </section>
-
-      <!-- ============ 防火墙 ============ -->
-      <section class="view" id="v-fw">
-        <div class="col-2">
-          <div class="card">
-            <h3>WAN 入站策略</h3>
-            <div class="kv"><span>基础防火墙</span><span class="tag green">已启用</span></div>
-            <div class="kv"><span>入站 (Input)</span><span>拒绝</span></div>
-            <div class="kv"><span>出站 (Output)</span><span>允许</span></div>
-            <div class="kv"><span>转发 (Forward)</span><span>拒绝</span></div>
-            <div class="kv"><span>SYN Flood 防护</span><span class="tag green">已启用</span></div>
-          </div>
-          <div class="card">
-            <h3>FullCone NAT</h3>
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-              <div style="flex:1;font-size:13px;color:var(--text2)">全锥型 NAT：让外部主机可主动向映射端口发包，改善联机游戏 / P2P 的 NAT 类型</div>
-              <label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
-            </div>
-            <div class="kv"><span>内核模块</span><span class="tag green">nft_fullcone 已加载</span></div>
-            <div class="kv"><span>规则状态</span><span>nft 表达式已生效</span></div>
-            <div class="hint" style="margin-top:12px">关闭后立即回退普通 masquerade，无需重启。</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ 系统设置 ============ -->
-      <section class="view" id="v-sys">
-        <div class="col-2">
-          <div class="card">
-            <h3>系统信息</h3>
-            <div class="kv"><span>固件版本</span><span>FanchmWrt 26.11 · be72pro-fwx-27</span></div>
-            <div class="kv"><span>内核</span><span>6.6.94 (MT7988)</span></div>
-            <div class="kv"><span>运行时长</span><span>3 天 7 小时</span></div>
-            <div class="kv"><span>内存</span><span>216 / 512 MB</span></div>
-            <div class="kv"><span>特征库</span><span>v26.4.10 · 305 应用</span></div>
-          </div>
-          <div class="card">
-            <h3>配置备份</h3>
-            <div style="display:flex;flex-direction:column;gap:9px">
-              <button class="btn"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>导出当前配置</button>
-              <button class="btn"><svg viewBox="0 0 24 24"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>导入配置</button>
-              <button class="btn" style="border-color:var(--bad-soft);color:var(--bad)"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/></svg>恢复出厂设置</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
+      <div class="card">
+        <h3>网络状态</h3>
+        <div class="kv"><span>WAN IP</span><span>112.65.**.216</span></div>
+        <div class="kv"><span>WAN 状态</span><span class="tag green">已连接</span></div>
+        <div class="kv"><span>连接方式</span><span>PPPoE</span></div>
+        <div class="kv"><span>DNS</span><span>223.5.5.5</span></div>
+        <div class="hint"><b>字段：</b>network_status（wan_ip / wan_status）</div>
+      </div>
     </div>
+    <div class="col-2">
+      <div class="card">
+        <h3>活跃应用 <span class="more" onclick="go('appfilter')">去管控</span></h3>
+        <div class="dev-list">
+          <div class="dev-row"><div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div><div class="dev-main"><div class="nm">抖音</div><div class="meta">累计 42 分钟</div></div><div class="dev-traffic">↓ 21.3 MB/s</div></div>
+          <div class="dev-row"><div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div><div class="dev-main"><div class="nm">哔哩哔哩</div><div class="meta">累计 18 分钟</div></div><div class="dev-traffic">↓ 15.2 MB/s</div></div>
+          <div class="dev-row"><div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div><div class="dev-main"><div class="nm">微信</div><div class="meta">累计 6 分钟</div></div><div class="dev-traffic">↓ 1.1 MB/s</div></div>
+        </div>
+        <div class="hint"><b>字段：</b>active_app[].name / total_time / up / down</div>
+      </div>
+      <div class="card">
+        <h3>活跃主机</h3>
+        <div class="dev-list">
+          <div class="dev-row"><div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="13" rx="2"/></svg></div><div class="dev-main"><div class="nm">书房 MacBook</div><div class="meta">192.168.1.102</div></div><div class="dev-traffic">↓ 4.2 M<small>↑ 0.4 M</small></div></div>
+          <div class="dev-row"><div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div><div class="dev-main"><div class="nm">客厅电视</div><div class="meta">192.168.1.110</div></div><div class="dev-traffic">↓ 1.8 M<small>↑ 0.1 M</small></div></div>
+        </div>
+        <div class="hint"><b>字段：</b>active_host[].hostname / mac / ip / up / down</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-dashset">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-dashboard-setting / setting.htm · <b>数据来源</b> <code>get_dashboard_param</code> / <code>set_dashboard_param</code> / <code>get_system_base_info</code></div>
+    <div class="col-2">
+      <div class="card">
+        <h3>监控接口</h3>
+        <div class="form-grid">
+          <label>流量统计接口</label>
+          <select class="inp"><option>wan (pppoe-wan)</option><option>eth2 (2.5G)</option><option>br-lan</option></select>
+        </div>
+        <div class="hint">固件原文：Configure dashboard monitoring interface / Traffic Statistics Interface。仅影响仪表板的接口流量卡片。</div>
+      </div>
+      <div class="card">
+        <h3>依赖能力</h3>
+        <div class="kv"><span>user_session 采集</span><span class="tag">未启用</span></div>
+        <div class="kv"><span>无线信息</span><span class="tag green">可用</span></div>
+        <div class="hint">对应 <code>get_system_base_info</code> 的 user_session_enable / wireless_support 字段。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-users">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-user / user_status.htm · <b>数据来源</b> <code>get_all_users</code>、<code>get_parental_control_detail</code>、<code>add/del_mac_blacklist</code>、<code>set_nickname</code></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <div class="tabs" style="margin:0"><div class="tab active">全部 18</div><div class="tab">在线 12</div><div class="tab">离线 6</div></div>
+      <div class="spacer"></div>
+      <input class="inp" placeholder="搜索昵称 / MAC / IP" style="width:220px">
+    </div>
+    <div class="card" style="padding:6px 18px 8px">
+      <table class="tbl">
+        <thead><tr><th>设备</th><th>IP 地址</th><th>在线</th><th>上行</th><th>下行</th><th>管控状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:9px"><span class="status-dot"></span><div><div style="color:var(--text);font-weight:500">书房 MacBook</div><div style="font-size:11px;color:var(--text3)">A4:2B:8C:11:22:33</div></div></div></td>
+            <td>192.168.1.102</td><td><span class="tag green">在线</span></td><td>4.2 MB/s</td><td>12.1 MB/s</td>
+            <td><span class="tag">不限</span></td>
+            <td><button class="btn" style="padding:3px 9px" onclick="openDrawer()">详情</button> <button class="btn danger" style="padding:3px 9px">拉黑</button></td>
+          </tr>
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:9px"><span class="status-dot"></span><div><div style="color:var(--text);font-weight:500">孩子 iPad</div><div style="font-size:11px;color:var(--text3)">D4:61:9D:55:66:77</div></div></div></td>
+            <td>192.168.1.121</td><td><span class="tag green">在线</span></td><td>0.2 MB/s</td><td>0.9 MB/s</td>
+            <td><span class="tag amber">应用受限</span></td>
+            <td><button class="btn" style="padding:3px 9px" onclick="openDrawer()">详情</button> <button class="btn danger" style="padding:3px 9px">拉黑</button></td>
+          </tr>
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:9px"><span class="status-dot off"></span><div><div style="color:var(--text);font-weight:500">扫地机器人</div><div style="font-size:11px;color:var(--text3)">88:12:4E:AA:BB:CC</div></div></div></td>
+            <td>192.168.1.132</td><td><span class="tag">离线</span></td><td>—</td><td>—</td>
+            <td><span class="tag">不限</span></td>
+            <td><button class="btn" style="padding:3px 9px">详情</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="hint"><b>真实交互：</b>「详情」打开家长控制弹窗（<code>get_parental_control_detail</code> 的 pc_status / appfilter_rules / macfilter_rules）；「拉黑」写 <code>add_mac_blacklist</code>（断网）；昵称可编辑（<code>set_nickname</code>）。</div>
+  </section>
+
+  <section class="view" id="v-records">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-record / base_setting.htm · <b>数据来源</b> <code>get_user_records</code>、<code>get_online_offline_records</code>、<code>delete_record_files</code>、<code>get_record_base</code>/<code>set_record_base</code></div>
+    <div class="tabs"><div class="tab active">上网记录</div><div class="tab">上下线记录</div><div class="tab">基础设置</div></div>
+    <div class="card" style="padding:6px 18px 8px;margin-bottom:13px">
+      <table class="tbl">
+        <thead><tr><th>时间</th><th>设备</th><th>应用</th><th>上行</th><th>下行</th><th>时长</th></tr></thead>
+        <tbody>
+          <tr><td>11-27 12:41</td><td>书房 MacBook</td><td><span class="tag blue">哔哩哔哩</span></td><td>4 MB</td><td>182 MB</td><td>12 分 30 秒</td></tr>
+          <tr><td>11-27 12:38</td><td>孩子 iPad</td><td><span class="tag red">王者荣耀（已拦截）</span></td><td>0</td><td>0</td><td>—</td></tr>
+          <tr><td>11-27 12:30</td><td>客厅电视</td><td><span class="tag">哔哩哔哩</span></td><td>2 MB</td><td>96 MB</td><td>8 分 12 秒</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col-2">
+      <div class="card">
+        <h3>记录设置</h3>
+        <div class="form-grid">
+          <label>记录开关</label><label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
+          <label>应用最短有效时长</label><input class="inp" value="300" style="width:120px">
+          <label>基础数据路径</label><input class="inp" value="/tmp/fwx/client_data">
+          <label>历史数据路径</label><input class="inp" value="/tmp/fwx/client_data">
+        </div>
+        <div class="hint">字段：enable / app_valid_time（秒）/ base_data_path / history_data_path。</div>
+      </div>
+      <div class="card">
+        <h3>数据维护</h3>
+        <div class="kv"><span>历史数据大小</span><span>186 MB</span></div>
+        <div class="kv"><span>保留范围</span><span>最近 30 天</span></div>
+        <div style="margin-top:13px"><button class="btn danger"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/></svg>清理历史数据</button></div>
+        <div class="hint">对应 <code>delete_record_files</code>（按日期范围 / 全部）。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-rwhitelist">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-record-whitelist / index.htm · <b>数据来源</b> <code>get_record_whitelist</code> / <code>add_record_whitelist</code> / <code>del_record_whitelist</code>（本次 build 自研）</div>
+    <div class="card" style="padding:6px 18px 8px;margin-bottom:13px">
+      <table class="tbl">
+        <thead><tr><th>MAC 地址</th><th>主机名</th><th>备注</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td>A4:2B:8C:11:22:33</td><td>MacBook-Pro</td><td>不审计设备</td><td><button class="btn danger" style="padding:3px 9px">移出白名单</button></td></tr>
+          <tr><td>00:1A:2B:3C:4D:5E</td><td>工作手机</td><td>—</td><td><button class="btn danger" style="padding:3px 9px">移出白名单</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px"><input class="inp" placeholder="输入 MAC 地址，如 AA:BB:CC:DD:EE:FF" style="width:280px"><button class="btn primary">加入白名单</button></div>
+    <div class="hint"><b>已实现语义：</b>白名单设备不产生上网记录（写入侧过滤）、不出现在审计列表；详情页实时访问仍可见。uci：<code>fwx_record.@whitelist[0].whitelist</code>。</div>
+  </section>
+
+  <section class="view" id="v-traffic">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-traffic-stat / traffic_stat.htm · <b>数据来源</b> <code>get_today_traffic</code>（逐小时）、<code>get_history_traffic_stats</code>（30 天，本次 build 自研）</div>
+    <div class="grid g2" style="margin-bottom:13px">
+      <div class="card">
+        <h3>今日流量（逐小时）</h3>
+        <div class="bars">
+          <div class="bar-row"><span class="nm">08:00</span><div class="track"><div class="fill" style="width:12%"></div></div><span class="val">1.2 G</span></div>
+          <div class="bar-row"><span class="nm">10:00</span><div class="track"><div class="fill" style="width:34%"></div></div><span class="val">3.1 G</span></div>
+          <div class="bar-row"><span class="nm">12:00</span><div class="track"><div class="fill" style="width:78%"></div></div><span class="val">6.8 G</span></div>
+          <div class="bar-row"><span class="nm">14:00</span><div class="track"><div class="fill" style="width:56%"></div></div><span class="val">4.9 G</span></div>
+        </div>
+        <div class="hint">上行/下行双序列；数据源：内核逐小时累计。</div>
+      </div>
+      <div class="card">
+        <h3>历史流量（近 30 天）</h3>
+        <div class="bars">
+          <div class="bar-row"><span class="nm">11-25</span><div class="track"><div class="fill" style="width:64%"></div></div><span class="val">52.1 G</span></div>
+          <div class="bar-row"><span class="nm">11-26</span><div class="track"><div class="fill" style="width:82%"></div></div><span class="val">66.4 G</span></div>
+          <div class="bar-row"><span class="nm">11-27</span><div class="track"><div class="fill" style="width:41%"></div></div><span class="val">33.2 G</span></div>
+        </div>
+        <div class="hint">直读 <code>client_data/global/stats/traffic_&lt;date&gt;.json</code>；今天用实时值。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-session">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-session-stat / session_stat.htm · <b>数据来源</b> 会话数统计（现时 / 均值 / 峰值：5 分钟 / 1 小时 / 24 小时）</div>
+    <div class="grid g3" style="margin-bottom:13px">
+      <div class="card"><div class="kpi-label">当前会话数</div><div class="kpi">1,284</div><div class="sub-text">近 5 分钟采样</div></div>
+      <div class="card"><div class="kpi-label">近 1 小时均值</div><div class="kpi">980</div><div class="sub-text">峰值 1,502</div></div>
+      <div class="card"><div class="kpi-label">24 小时峰值</div><div class="kpi">2,341</div><div class="sub-text">出现在 21:40</div></div>
+    </div>
+    <div class="card">
+      <h3>会话曲线（24 小时）</h3>
+      <svg viewBox="0 0 640 130" style="width:100%;height:140px">
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="0,108 40,102 80,84 120,90 160,68 200,74 240,56 280,62 320,42 360,50 400,34 440,38 480,24 520,30 560,18 600,24 640,16"/>
+        <line x1="0" y1="118" x2="640" y2="118" stroke="var(--line2)" stroke-width="1"/>
+      </svg>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+      <div class="hint">数据源：conntrack 会话计数采样，无 DPI 参与。</div>
+    </div>
+  </section>
+
+  <section class="view" id="v-appfilter">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-appfilter / rules.htm · <b>数据来源</b> <code>get_filter_rules</code> / <code>add/update/delete_filter_rule</code>、<code>class_list</code>、appfilter_whitelist、<code>get/set_app_filter_adv</code></div>
+    <div class="tabs"><div class="tab active">过滤规则</div><div class="tab">白名单</div><div class="tab">高级</div></div>
+    <div class="card" style="padding:6px 18px 8px;margin-bottom:13px">
+      <table class="tbl">
+        <thead><tr><th>规则名</th><th>模式</th><th>时间规则</th><th>应用</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="color:var(--text);font-weight:500">孩子设备管控</td>
+            <td><span class="tag blue">单用户</span></td><td>一~五 18:00-21:00</td>
+            <td><span class="tag">游戏 × 12</span> <span class="tag">视频 × 18</span></td>
+            <td><span class="tag green">启用</span></td>
+            <td><button class="btn" style="padding:3px 9px">编辑</button> <button class="btn danger" style="padding:3px 9px">删除</button></td>
+          </tr>
+          <tr>
+            <td style="color:var(--text);font-weight:500">全局禁游</td>
+            <td><span class="tag">所有用户</span></td><td>每日 00:00-24:00</td>
+            <td><span class="tag">游戏 × 12</span></td>
+            <td><span class="tag">停用</span></td>
+            <td><button class="btn" style="padding:3px 9px">编辑</button> <button class="btn danger" style="padding:3px 9px">删除</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <button class="btn primary"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增规则</button>
+    <div class="hint"><b>字段：</b>id / name / mode（1=所有用户，2=单用户）/ enabled / time_rules / apps（来自特征库 305 条，按 #class 分类选择）。</div>
+  </section>
+
+  <section class="view" id="v-macfilter">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-macfilter / rules.htm + user.htm · <b>数据来源</b> <code>get_mac_filter_rules</code> / <code>add/update/delete_mac_filter_rule</code>、<code>get/set_mac_filter_adv</code>、macfilter_whitelist</div>
+    <div class="tabs"><div class="tab active">过滤规则</div><div class="tab">按用户</div><div class="tab">白名单</div><div class="tab">高级</div></div>
+    <div class="card" style="padding:6px 18px 8px;margin-bottom:13px">
+      <table class="tbl">
+        <thead><tr><th>规则名</th><th>用户</th><th>条件</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="color:var(--text);font-weight:500">夜间断网</td><td>孩子 iPad</td>
+            <td><span class="tag">时间</span> 每日 21:00-07:00</td>
+            <td><span class="tag green">启用</span></td>
+            <td><button class="btn" style="padding:3px 9px">编辑</button> <button class="btn danger" style="padding:3px 9px">删除</button></td>
+          </tr>
+          <tr>
+            <td style="color:var(--text);font-weight:500">每日时长限制</td><td>孩子 iPad</td>
+            <td><span class="tag amber">每日时长</span> 90 分钟</td>
+            <td><span class="tag green">启用</span></td>
+            <td><button class="btn" style="padding:3px 9px">编辑</button> <button class="btn danger" style="padding:3px 9px">删除</button></td>
+          </tr>
+          <tr>
+            <td style="color:var(--text);font-weight:500">流量限额</td><td>孩子 iPad</td>
+            <td><span class="tag red">每日流量</span> 2 GB</td>
+            <td><span class="tag">停用</span></td>
+            <td><button class="btn" style="padding:3px 9px">编辑</button> <button class="btn danger" style="padding:3px 9px">删除</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增时间规则</button>
+      <button class="btn">新增时长规则</button>
+      <button class="btn">新增流量规则</button>
+    </div>
+    <div class="hint"><b>上一版漏掉的关键功能：</b>MAC 过滤支持三种条件 —— <b>时间</b> / <b>每日时长</b> / <b>每日流量</b>，对应固件三个新增按钮。终端详情的「行为规则」页应展示这三种条件的命中状态。</div>
+  </section>
+
+  <section class="view" id="v-blacklist">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-mac-blacklist / list.htm · <b>数据来源</b> <code>get_mac_blacklist</code> / <code>add_mac_blacklist</code> / <code>del_mac_blacklist</code>（本次 build 自研，rule_manager 规则 102 下发）</div>
+    <div class="card" style="padding:6px 18px 8px;margin-bottom:13px">
+      <table class="tbl">
+        <thead><tr><th>MAC 地址</th><th>主机名</th><th>备注</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td>88:12:4E:AA:BB:CC</td><td>未知设备</td><td>陌生设备</td><td><button class="btn danger" style="padding:3px 9px">移出黑名单</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="hint"><b>生效链路：</b>uci → rule_manager 每周期同步为内核规则 102（单用户模式）→ 命中断网；移出后下周期恢复。</div>
+  </section>
+
+  <section class="view" id="v-lan">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-network / lan.htm · <b>数据来源</b> <code>get_lan_info</code> / <code>set_lan_info</code></div>
+    <div class="col-2">
+      <div class="card">
+        <h3>LAN 参数</h3>
+        <div class="form-grid">
+          <label>IP 地址</label><input class="inp" value="192.168.1.1">
+          <label>子网掩码</label><input class="inp" value="255.255.255.0">
+          <label>DHCP 服务</label><label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
+          <label>起始地址</label><input class="inp" value="192.168.1.100">
+          <label>结束地址</label><input class="inp" value="192.168.1.200">
+          <label>租期</label><select class="inp"><option>12 小时</option><option>1 天</option><option>3 天</option></select>
+        </div>
+        <div style="margin-top:16px"><button class="btn primary">保存</button></div>
+      </div>
+      <div class="card">
+        <h3>说明</h3>
+        <div class="hint">修改 LAN IP 后页面跳转到新地址；租期选项对应固件的 10 分钟 / 30 分钟 / 1 小时 … 3 天。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-wan">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-network / wan.htm · <b>数据来源</b> <code>get_wan_info</code> / <code>set_wan_info</code>（DHCP / PPPoE / 静态 IP）</div>
+    <div class="col-2">
+      <div class="card">
+        <h3>连接方式</h3>
+        <div class="tabs" style="margin:0 0 14px"><div class="tab">DHCP</div><div class="tab active">PPPoE</div><div class="tab">静态 IP</div></div>
+        <div class="form-grid">
+          <label>PPPoE 账号</label><input class="inp" value="0512********">
+          <label>PPPoE 密码</label><input class="inp" type="password" value="********">
+          <label>DNS1</label><input class="inp" value="223.5.5.5">
+          <label>DNS2</label><input class="inp" value="119.29.29.29">
+          <label>MAC 克隆</label><input class="inp" placeholder="留空使用设备 MAC">
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px"><button class="btn primary">保存并重连</button><button class="btn">断开</button></div>
+      </div>
+      <div class="card">
+        <h3>当前状态</h3>
+        <div class="kv"><span>连接状态</span><span class="tag green">已连接</span></div>
+        <div class="kv"><span>公网 IP</span><span>112.65.**.216</span></div>
+        <div class="kv"><span>网关</span><span>112.65.**.1</span></div>
+        <div class="kv"><span>拨号时长</span><span>3 天 7 小时</span></div>
+        <div class="hint">字段：wan_proto / username / password / dns1 / dns2 / mac。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-workmode">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-network / work_mode.htm · <b>数据来源</b> <code>get_work_mode</code> / <code>set_work_mode</code></div>
+    <div class="card">
+      <h3>工作模式</h3>
+      <div class="grid g2" style="gap:11px">
+        <div style="border:2px solid var(--accent);border-radius:12px;padding:15px;cursor:pointer">
+          <div style="font-size:13.5px;font-weight:500;margin-bottom:4px">主路由模式</div>
+          <div style="font-size:12px;color:var(--text3)">拨号 / 获取公网 IP，DPI 在网关处识别与管控</div>
+          <div style="margin-top:9px"><span class="tag green">当前模式</span></div>
+        </div>
+        <div style="border:1px solid var(--line2);border-radius:12px;padding:15px;cursor:pointer;opacity:.75">
+          <div style="font-size:13.5px;font-weight:500;margin-bottom:4px">旁路由模式</div>
+          <div style="font-size:12px;color:var(--text3)">由上级网关拨号，本机旁路识别（DPI bypass）</div>
+        </div>
+      </div>
+      <div class="hint">本树 DPI 钩子在 PRE_ROUTING / FORWARD，两种模式均可用。</div>
+    </div>
+  </section>
+
+  <section class="view" id="v-firewall">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-firewall / basic.htm · <b>数据来源</b> <code>get_firewall</code> / <code>set_firewall</code>（读写 <code>firewall.@defaults[0]</code>，fw4 标准 uci）</div>
+    <div class="col-2">
+      <div class="card">
+        <h3>基础设置</h3>
+        <div class="kv"><span>入站 (Input)</span><span>拒绝</span></div>
+        <div class="kv"><span>出站 (Output)</span><span>允许</span></div>
+        <div class="kv"><span>转发 (Forward)</span><span>拒绝</span></div>
+        <div class="kv"><span>SYN Flood 防护</span><span class="tag green">启用</span></div>
+        <div class="kv"><span>IPv6 入站</span><span>拒绝</span></div>
+        <div class="hint">uci 键：defaults.input / output / forward / syn_flood / input_ipv6。</div>
+      </div>
+      <div class="card">
+        <h3>FullCone NAT</h3>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <div style="flex:1;font-size:12.5px;color:var(--text2)">全锥型 NAT：放宽回包来源限制，改善主机联机 NAT 类型（A/Open）</div>
+          <label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
+        </div>
+        <div class="kv"><span>内核模块</span><span class="tag green">nft_fullcone.ko</span></div>
+        <div class="kv"><span>规则</span><span class="tag green">fullcone 表达式已生效</span></div>
+        <div class="hint">fw4 树内补丁自带运行时自检：模块缺失自动降级 masq 并打 warn。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-system">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-system / system.htm · <b>数据来源</b> <code>get_system_info</code> / <code>set_system_info</code>、<code>get_system_base_info</code></div>
+    <div class="col-2">
+      <div class="card">
+        <h3>系统配置</h3>
+        <div class="form-grid">
+          <label>LAN 接口</label><input class="inp" value="br-lan">
+          <label>TCP 过滤时发 RST</label><label class="switch"><input type="checkbox" checked><span class="sl"></span></label>
+          <label>界面主题</label><select class="inp"><option>跟随系统</option><option>浅色</option><option>深色</option></select>
+        </div>
+        <div style="margin-top:16px"><button class="btn primary">保存</button></div>
+        <div class="hint">字段：lan_interface / tcp_reset / theme（Light / Dark）。</div>
+      </div>
+      <div class="card">
+        <h3>系统信息</h3>
+        <div class="kv"><span>固件版本</span><span>be72pro-fwx</span></div>
+        <div class="kv"><span>内核</span><span>6.6.94 (MT7988)</span></div>
+        <div class="kv"><span>运行时长</span><span>3 天 7 小时</span></div>
+        <div class="kv"><span>特征库</span><span>v26.4.10 · 305 应用</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-feature">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-feature / feature.htm · <b>数据来源</b> <code>get_feature_info</code> / <code>get_feature_class_list</code>（在线更新 / 自定义特征后端在 24.10 缺失）</div>
+    <div class="grid g3" style="margin-bottom:13px">
+      <div class="card"><div class="kpi-label">当前特征库</div><div class="kpi" style="font-size:19px">v26.4.10</div><div class="sub-text">社区维护版（2026-04）</div></div>
+      <div class="card"><div class="kpi-label">应用条目</div><div class="kpi">305</div><div class="sub-text">11 个分类</div></div>
+      <div class="card"><div class="kpi-label">格式</div><div class="kpi" style="font-size:19px">v3.0</div><div class="sub-text">内核解析器直读</div></div>
+    </div>
+    <div class="card">
+      <h3>分类明细</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:7px">
+        <span class="tag blue">聊天 14</span><span class="tag blue">游戏 38</span><span class="tag blue">视频 46</span>
+        <span class="tag blue">购物 18</span><span class="tag blue">音乐 12</span><span class="tag">招聘 6</span>
+        <span class="tag">下载 9</span><span class="tag">常用网站 28</span><span class="tag">生活 41</span>
+        <span class="tag">金融 21</span><span class="tag">工具 72</span>
+      </div>
+      <div class="hint"><b>诚实标注：</b>「在线更新」与「自定义特征」界面存在但后端缺失（<code>start_feature_online_update</code> 等），点击无响应。此处置灰并注明。</div>
+      <div style="display:flex;gap:8px;margin-top:13px;opacity:.5;pointer-events:none">
+        <button class="btn">在线更新（不可用）</button><button class="btn">自定义特征（不可用）</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-appcenter">
+    <div class="corr"><b>固件页面</b> luci-app-fwx-app-center / app_center.htm · <b>数据来源</b> <code>get_app_list</code> / <code>install_app</code> / <code>uninstall_app</code> / <code>update_system_sources</code></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <div class="tabs" style="margin:0"><div class="tab active">全部应用</div><div class="tab">已安装</div></div>
+      <div class="spacer"></div>
+      <button class="btn">更新软件源</button>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:11px">
+          <div class="dev-ico" style="width:38px;height:38px"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5z"/></svg></div>
+          <div><div style="font-size:13.5px;font-weight:500">网络诊断</div><div style="font-size:11px;color:var(--text3)">已安装 · v1.2</div></div>
+        </div>
+        <button class="btn" style="width:100%">卸载</button>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:11px">
+          <div class="dev-ico" style="width:38px;height:38px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></div>
+          <div><div style="font-size:13.5px;font-weight:500">DDNS 客户端</div><div style="font-size:11px;color:var(--text3)">未安装</div></div>
+        </div>
+        <button class="btn primary" style="width:100%">安装</button>
+      </div>
+      <div class="card" style="border-style:dashed;display:grid;place-items:center;color:var(--text3);font-size:12.5px;min-height:110px;text-align:center">软件源更新需外网<br>（拨号正常后可用）</div>
+    </div>
+    <div class="hint">应用中心 = 软件包管理（不是特征库）。之前“应用中心更新失败”是拨号不通导致软件源拉取失败。</div>
+  </section>
+
   </div>
 </div>
+</div>
 
-<!-- 终端详情抽屉 -->
 <div class="drawer-mask" id="mask" onclick="closeDrawer()"></div>
 <aside class="drawer" id="drawer">
   <div class="drawer-hd">
     <div class="dev-ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="13" rx="2"/><path d="M9 21h6M12 16v5"/></svg></div>
-    <div>
-      <div style="font-size:15px;font-weight:600">书房 MacBook</div>
-      <div style="font-size:12px;color:var(--text3)">192.168.1.102 · A4:2B:8C:11:22:33</div>
-    </div>
-    <button class="close-x" onclick="closeDrawer()"><svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div><div style="font-size:14.5px;font-weight:600">书房 MacBook</div><div style="font-size:11.5px;color:var(--text3)">192.168.1.102 · A4:2B:8C:11:22:33</div></div>
+    <button class="close-x" onclick="closeDrawer()"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
   </div>
   <div class="drawer-bd">
-    <div>
-      <div class="kpi-label">今日流量</div>
-      <div class="kpi" style="font-size:22px">4.6<small>GB</small> <span style="font-size:13px;color:var(--text3);font-weight:400">↓ 3.8 G · ↑ 0.8 G</span></div>
-      <div class="bars" style="margin-top:14px">
-        <div class="bar-row"><span class="nm">抖音</span><div class="track"><div class="fill" style="width:62%"></div></div><span class="val">62%</span></div>
-        <div class="bar-row"><span class="nm">哔哩哔哩</span><div class="track"><div class="fill" style="width:24%;background:#7c5cff"></div></div><span class="val">24%</span></div>
-        <div class="bar-row"><span class="nm">其他</span><div class="track"><div class="fill" style="width:14%;background:var(--text3)"></div></div><span class="val">14%</span></div>
-      </div>
+    <div class="tabs" style="margin:0;flex-wrap:wrap">
+      <div class="tab active">基础信息</div><div class="tab">应用时长</div><div class="tab">流量统计</div><div class="tab">行为规则</div><div class="tab">访问记录</div>
     </div>
     <div>
-      <h3 style="font-size:13px;color:var(--text2);margin-bottom:4px">管控状态</h3>
+      <div class="kv"><span>今日下行</span><span>12.1 GB</span></div>
+      <div class="kv"><span>今日上行</span><span>0.8 GB</span></div>
+      <div class="kv"><span>今日在线时长</span><span>6 小时 42 分</span></div>
       <div class="kv"><span>应用过滤</span><span class="tag">未启用</span></div>
-      <div class="kv"><span>时段限制</span><span class="tag">无</span></div>
+      <div class="kv"><span>MAC 规则</span><span class="tag green">无限制</span></div>
       <div class="kv"><span>记录白名单</span><span class="tag green">已加入</span></div>
-      <div class="kv"><span>接入方式</span><span>Wi-Fi 5G · 866 Mbps</span></div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn primary" style="flex:1">加入黑名单</button>
-      <button class="btn" style="flex:1">查看完整记录</button>
-    </div>
+    <div class="hint">对应 user_detail.htm 的 6 个 tab：基础信息 / 应用时长（dev_visit_time）/ 流量统计（get_hourly_stats）/ 应用排行（get_daily_top_apps）/ 行为规则（get_user_parental_control_rules）/ 访问记录（dev_visit_list）；30 天趋势在 user_history.htm（get_user_daily_summary）。</div>
   </div>
 </aside>
 
 <script>
-const titles = {
-  dash:['仪表板','网络运行正常 · 已于 2 分钟前同步'],
-  devices:['终端管理','18 台设备 · 12 台在线 · 1 台受限'],
-  apps:['应用管控','特征库 v26.4.10 · 305 个应用'],
-  audit:['上网审计','实时访问与历史记录'],
-  fw:['防火墙','WAN 策略与 FullCone NAT'],
-  sys:['系统设置','固件信息与配置管理']
+const T = {
+  dash:['仪表板','luci-app-fwx-dashboard · get_dashboard_common'],
+  dashset:['仪表板设置','luci-app-fwx-dashboard-setting · dashboard_param'],
+  users:['终端列表','luci-app-fwx-user · get_all_users + parental_control_detail'],
+  records:['上网记录','luci-app-fwx-record · user_records / record_base'],
+  rwhitelist:['记录白名单','luci-app-fwx-record-whitelist · record_whitelist（自研实现）'],
+  traffic:['流量统计','luci-app-fwx-traffic-stat · today + history_traffic_stats'],
+  session:['会话统计','luci-app-fwx-session-stat · 会话数采样'],
+  appfilter:['应用过滤','luci-app-fwx-appfilter · filter_rules + class_list'],
+  macfilter:['MAC 过滤','luci-app-fwx-macfilter · mac_filter_rules（时间/时长/流量）'],
+  blacklist:['设备黑名单','luci-app-fwx-mac-blacklist · mac_blacklist（自研实现）'],
+  lan:['LAN 设置','luci-app-fwx-network / lan.htm · lan_info'],
+  wan:['WAN 设置','luci-app-fwx-network / wan.htm · wan_info'],
+  workmode:['工作模式','luci-app-fwx-network / work_mode.htm'],
+  firewall:['防火墙','luci-app-fwx-firewall · firewall.@defaults[0]'],
+  system:['系统设置','luci-app-fwx-system · system_info'],
+  feature:['特征库','luci-app-fwx-feature · feature_info（v26.4.10）'],
+  appcenter:['应用中心','luci-app-fwx-app-center · 软件包管理']
 };
 function go(v){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.view===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.remove('active'));
   const el = document.getElementById('v-'+v);
-  if(el){
-    void el.offsetWidth;           // 重排以重放动画
-    el.classList.add('active');
-  }
-  const t = titles[v] || ['',''];
+  if(el){ void el.offsetWidth; el.classList.add('active'); }
+  const t = T[v] || ['',''];
   document.getElementById('pg-title').textContent = t[0];
   document.getElementById('pg-sub').textContent = t[1];
   document.querySelector('.content').scrollTop = 0;
 }
-document.querySelectorAll('.nav-item').forEach(n=>{
-  n.addEventListener('click', ()=>go(n.dataset.view));
-});
-function toggleTheme(){
-  const h = document.documentElement;
-  h.dataset.theme = h.dataset.theme==='dark' ? 'light' : 'dark';
-  document.getElementById('ico-theme').innerHTML = h.dataset.theme==='dark'
-    ? '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>'
-    : '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/>';
-}
-function openDrawer(){
-  document.getElementById('mask').classList.add('open');
-  document.getElementById('drawer').classList.add('open');
-}
-function closeDrawer(){
-  document.getElementById('mask').classList.remove('open');
-  document.getElementById('drawer').classList.remove('open');
-}
-document.querySelectorAll('.tab').forEach(t=>{
-  t.addEventListener('click', ()=>{
-    t.parentElement.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-    t.classList.add('active');
-  });
-});
+document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>go(n.dataset.view)));
+function toggleTheme(){const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark';}
+function openDrawer(){document.getElementById('mask').classList.add('open');document.getElementById('drawer').classList.add('open');}
+function closeDrawer(){document.getElementById('mask').classList.remove('open');document.getElementById('drawer').classList.remove('open');}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  t.parentElement.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+}));
 </script>
 </body>
 </html>

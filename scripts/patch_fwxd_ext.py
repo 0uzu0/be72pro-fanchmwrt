@@ -45,6 +45,7 @@ MK_TOP_REL = FWXD_TOP_REL + "/Makefile"
 
 NEW_FILES = ["fwx_firewall.c", "fwx_firewall.h", "fwx_ext_compat.c",
              "mac_blacklist.config",   # named section base，key 与 25.12 一致
+             "fwx_record.config",      # 记录白名单的 whitelist 节（25.12 才有）
              "feature.cfg"]            # v26.4.10 社区特征库（305 条，去重清洗版）
 
 # 分派表前的声明（fwx_ubus.c 里这些函数没有定义，只有声明后才不会被
@@ -330,11 +331,27 @@ def main():
             lsfn = (
                 'local function sync_blacklist_mac_rule()\n'
                 '    local mac_list = load_mac_blacklist()\n'
-                '    if set_macfilter_rule_mac_list(BLACKLIST_MAC_FILTER_RULE_ID, mac_list, 2) then\n'
+                '    -- 24.10 的 set_macfilter_rule_mac_list 只有 2 个参数（mode 是 25.12 才有的）：\n'
+                '    -- 24.10 内核里"规则里带 mac_list"即"命中断网"，黑名单语义正好对上\n'
+                '    if set_macfilter_rule_mac_list(BLACKLIST_MAC_FILTER_RULE_ID, mac_list) then\n'
                 '        log(string.format("MACFilter blacklist rule synced: %d devices", #mac_list))\n'
                 '        return true\n'
                 '    end\n'
                 '    return false\n'
+                'end\n'
+                '\n'
+                '-- 规则 102 必须先创建：mod_mac_filter_rule 找不到规则时直接\n'
+                '-- "rule 102 not found" 返回，MAC 列表一条也进不去 —— 黑名单会变成摆设。\n'
+                '-- 注意 flush_macfilter_rules() 会把 102 一起清掉（macfilter reinit 分支），\n'
+                '-- 所以【启动】和【reinit】两条路径都要调用本函数重建。\n'
+                'local function init_blacklist_mac_rule()\n'
+                '    if create_macfilter_rule(BLACKLIST_MAC_FILTER_RULE_ID) then\n'
+                '        log(string.format("MACFilter blacklist rule initialized: id=%d", BLACKLIST_MAC_FILTER_RULE_ID))\n'
+                '    else\n'
+                '        -- 已存在时内核返回 -1（不会重置已有列表），视为就绪\n'
+                '        log(string.format("MACFilter blacklist rule already present: id=%d", BLACKLIST_MAC_FILTER_RULE_ID))\n'
+                '    end\n'
+                '    return true\n'
                 'end\n'
                 '\n')
             c = 'local function process_appfilter_rules(current_info)\n'
@@ -354,6 +371,25 @@ def main():
                 ltext = ltext.replace(d, d + "            sync_blacklist_mac_rule()\n", 1)
                 lchanged = True
                 print("  [+] rule_manager.lua：主循环加入黑名单同步")
+
+        # 5) 两条初始化路径（启动 / macfilter reinit）都要重建规则 102
+        has_call = any(ln.strip() == "init_blacklist_mac_rule()"
+                       for ln in ltext.splitlines())
+        if not has_call:
+            out_lines = []
+            hits = 0
+            for ln in ltext.splitlines(True):
+                out_lines.append(ln)
+                if ln.strip() == "init_single_mac_rule()":
+                    indent = ln[:len(ln) - len(ln.lstrip())]
+                    out_lines.append(indent + "init_blacklist_mac_rule()\n")
+                    hits += 1
+            if hits:
+                ltext = "".join(out_lines)
+                lchanged = True
+                print("  [+] rule_manager.lua：%d 处初始化路径创建黑名单规则" % hits)
+            else:
+                print("  [!] rule_manager: init_single_mac_rule() 调用点未命中")
 
         if lchanged:
             with open(lua, "w", encoding="utf-8", errors="surrogateescape") as f:
@@ -392,19 +428,25 @@ def main():
         with open(mk_top, "r", encoding="utf-8", errors="surrogateescape") as f:
             top_text = f.read()
         anchor_tab = "\t"
-        mbl_anchor = (anchor_tab + "$(INSTALL_DATA) ./files/appfilter_whitelist.config "
-                      "$(1)/etc/config/appfilter_whitelist\n")
-        mbl_line = (anchor_tab + "$(INSTALL_DATA) ./files/mac_blacklist.config "
-                    "$(1)/etc/config/mac_blacklist\n")
-        if "mac_blacklist.config $(1)/etc/config/mac_blacklist" in top_text:
-            print("  [skip] 顶层 Makefile 已安装 mac_blacklist.config")
-        elif mbl_anchor in top_text:
-            top_text = top_text.replace(mbl_anchor, mbl_anchor + mbl_line, 1)
+        prev = (anchor_tab + "$(INSTALL_DATA) ./files/appfilter_whitelist.config "
+                "$(1)/etc/config/appfilter_whitelist\n")
+        # 新增的 uci 默认配置：黑名单（mac_blacklist.base.mac_list）与
+        # 记录白名单（fwx_record.@whitelist[0].whitelist）。两者都是 25.12
+        # 才有的包，24.10 缺文件时写入会失败，必须随包安装。
+        if prev not in top_text:
+            print("  [!] 顶层 Makefile 安装行锚点未找到——mac_blacklist / fwx_record 的 uci 包将不存在")
+        else:
+            for cfg in ("mac_blacklist", "fwx_record"):
+                need = "%s.config $(1)/etc/config/%s" % (cfg, cfg)
+                if need in top_text:
+                    print("  [skip] 顶层 Makefile 已安装 %s.config" % cfg)
+                    continue
+                line = anchor_tab + "$(INSTALL_DATA) ./files/" + need + "\n"
+                top_text = top_text.replace(prev, prev + line, 1)
+                prev = prev + line
+                print("  [+] 顶层 Makefile：追加 %s.config 安装行" % cfg)
             with open(mk_top, "w", encoding="utf-8", errors="surrogateescape") as f:
                 f.write(top_text)
-            print("  [+] 顶层 Makefile：追加 mac_blacklist.config 安装行")
-        else:
-            print("  [!] 顶层 Makefile 安装行锚点未找到——mac_blacklist 的 uci 包将不存在，黑名单页会报错")
 
     if mk_changed:
         with open(mk, "w", encoding="utf-8", errors="surrogateescape") as f:
@@ -445,6 +487,36 @@ def main():
                 "fwx_api_get_system_base_info"):
         if sym not in ext_src:
             die("自校验失败：fwx_ext_compat.c 里没有 %s" % sym)
+
+    # 黑名单执行链必须完整：规则 102 不创建的话，mod_mac_filter_rule 会
+    # "rule not found"，整个黑名单是摆设（本轮修复的缺陷）。
+    lbl = os.path.join(tree, FWXD_TOP_REL, "files", "rule_manager.lua")
+    if os.path.isfile(lbl):
+        lb = open(lbl, encoding="utf-8", errors="surrogateescape").read()
+        if "local function init_blacklist_mac_rule()" not in lb:
+            die("自校验失败：rule_manager.lua 缺 init_blacklist_mac_rule()（规则 102 不会被创建）")
+        if not any(ln.strip() == "init_blacklist_mac_rule()" for ln in lb.splitlines()):
+            die("自校验失败：rule_manager.lua 里没有 init_blacklist_mac_rule() 的调用")
+        if "set_macfilter_rule_mac_list(BLACKLIST_MAC_FILTER_RULE_ID, mac_list, 2)" in lb:
+            die("自校验失败：24.10 的 set_macfilter_rule_mac_list 只有 2 个参数，传 3 个无效")
+        if "sync_blacklist_mac_rule()" not in lb:
+            die("自校验失败：rule_manager.lua 缺黑名单同步调用")
+    ft = os.path.join(tree, FWXD_TOP_REL, "files", "feature.cfg")
+    if os.path.isfile(ft):
+        with open(ft, encoding="utf-8", errors="replace") as f:
+            n_feat = sum(1 for ln in f if ln[:1].isdigit())
+        if n_feat < 200:
+            die("自校验失败：feature.cfg 只有 %d 条特征（应为社区库 300+ 条）" % n_feat)
+
+    # uci 默认配置必须真的进镜像（否则对应页面的写入直接失败）
+    if os.path.isfile(os.path.join(tree, MK_TOP_REL)):
+        top_chk = open(os.path.join(tree, MK_TOP_REL),
+                       encoding="utf-8", errors="surrogateescape").read()
+        for cfg in ("mac_blacklist", "fwx_record"):
+            if "%s.config $(1)/etc/config/%s" % (cfg, cfg) not in top_chk:
+                die("自校验失败：顶层 Makefile 没有安装 %s.config" % cfg)
+            if not os.path.isfile(os.path.join(tree, FWXD_TOP_REL, "files", cfg + ".config")):
+                die("自校验失败：files/%s.config 没落地" % cfg)
 
     print("  ✔ 自校验通过：%d 个接口在分派表中，源文件与过滤就位" % len(apis))
     return 0

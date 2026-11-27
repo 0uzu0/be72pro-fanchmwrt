@@ -151,6 +151,18 @@ python3 "$ROOT/scripts/patch_fwxd_ext.py" "$RJ" \
 python3 "$ROOT/scripts/check_api.py" "$RJ" \
 	|| warn "界面包与 fwxd 接口对不上 —— 相关页面可能空白（见上表）"
 
+# 2c. 扩展源码机械审查（本机无交叉编译器时的替代手段）
+#     专查会被 -Werror 判死、但肉眼很难看出来的三类问题：
+#       implicit-function-declaration（调用早于定义/声明）
+#       宏/标识符未定义（按行号改写大文件时误删段落）
+#       花括号不平衡（插入截断、段删除越界）
+#     build-23、build-26 两次失败都是这类 —— 各白跑一趟 80 分钟。
+#     这一步 1 秒出结果，宁在这里失败，不要拖到编译阶段。
+python3 "$ROOT/scripts/check_c_sanity.py" \
+	"$RJ/package/fcm/fwxd/src/fwx_ext_compat.c" \
+	"$RJ/package/fcm/fwxd/src/fwx_firewall.c" \
+	|| { printf '\n\033[1;31m[FATAL] 扩展源码机械审查未通过 —— 上面列出的问题会直接让编译失败\033[0m\n'; exit 1; }
+
 # 样式桥接 A（默认关闭）：把 fwx 页面的硬编码色换成主题变量。
 # 关的原因：官网 UI 就是这套硬编码色（#10b981 保存 / #007bff 编辑 / #ff4444 删除 /
 # #2196F3 开关 / #e5e7eb 描边 / 卡片 transparent），换成主题变量反而偏离 1:1。

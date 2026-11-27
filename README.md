@@ -299,7 +299,7 @@ v3 还处理了两件容易漏的事：
 | 终端列表 › 详情 | `get_user_parental_control_rules` | **已实现** | `macfilter.@rule[i]` 的时段规则（time 型）+ appfilter/macfilter 白名单命中标志 |
 | 终端列表 › 详情 | `get_parental_control_detail` | **已实现** | 从 uci 规则实时聚合（25.12 读缓存 JSON，那套缓存写入链路 24.10 没有——实时聚合语义一致且无时差） |
 | 终端列表 › 状态页 | `get_user_stat` 等 4 个应用记录接口 | **不做** | 对照官方 api.html 逐个验证：pin 版界面（3c6ae71）对这些接口 **0 处引用**（它们是 25.12 main 界面的接口）——做了就是无消费者的死代码；`get_app_history_records` 还依赖 25.12 特有的 SQLite client.db |
-| 终端管理 | 设备黑名单 `get/add/del_mac_blacklist` | **已实现且生效** | uci `mac_blacklist.base.mac_list`（named section 由补进的 `mac_blacklist.config` 提供）；生效链路：`rule_manager.lua` 每周期把黑名单读出、作为内核规则 102 下发（25.12 同机制，内核零改动）——之前**页面已装但后端缺失，增删无响应** |
+| 终端管理 | 设备黑名单 `get/add/del_mac_blacklist` | **已实现且生效** | uci `mac_blacklist.base.mac_list`（named section 由补进的 `mac_blacklist.config` 提供）；生效链路：`rule_manager.lua` 每周期把黑名单读出、作为内核规则 102 下发（命中断网，内核零改动）。**两个必须做对的点**：① 规则 102 必须先 `add_mac_filter_rule` 创建，否则内核 `mod_mac_filter_rule` 直接返回 `rule 102 not found`，一条 MAC 也进不去 ② `macfilter_reinit` 分支会先 `flush_macfilter_rules()` 清掉**全部**规则（含 102），所以「启动」和「reinit」两条路径都要重建 —— 只做一处的话，每次增删黑名单后规则就消失。页面之前是**装了但后端缺失，增删无响应** |
 | 系统配置页 | `get_system_base_info` | **已实现** | `user_session_enable` 恒 0（24.10 无该 proc），`wireless_support` 不输出（24.10 无 capability 结构） |
 | 仪表板 | `get_init_status`/`set_init_status` | **已实现** | `/etc/fwx_init_status` |
 | 网络设置 › 防火墙 | `get_firewall`/`set_firewall` | **已实现** | 移植 25.12 的 `fwx_firewall.c`（只读写 `firewall.@defaults[0]`，就是 fw4 标准 uci）+ `kmod-nft-fullcone` |
@@ -328,6 +328,30 @@ v3 还处理了两件容易漏的事：
    分段标记；特征库更新后 5 分钟内自动重载。
 3. 历史曲线与每日汇总从刷机当天起才有数据，此前日期显示为 0 —— 数据是攒出来的，
    不是补出来的。
+
+**接口与界面的字段对齐（逐个对着 view 源码核过，不是按想象写的）**：
+
+| 接口 | 界面实际读的字段 | 说明 |
+|---|---|---|
+| `get_history_traffic_stats` | `list[].date_str/up_bytes/down_bytes`、`hourly_traffic[].{hour,traffic.up_bytes,traffic.down_bytes}` | 24.10 原本**没有** `hourly_traffic`，「今日流量统计」那张图一直是空的；本次从 `get_global_traffic_stats()` 实时补齐 24 小时 |
+| `get_user_daily_summary` | `list[]` 恰好 30 项；`date`（**字符串** `YYYY-MM-DD`）、`available`、`up_bytes`、`down_bytes`、`active_seconds`、`online_seconds`、`category_seconds{}`、`top_apps[].{appid,name,seconds}` | 两个坑：① 横轴是 `list.map(day => day.date)` 且轴标签做 `date.slice(5)` —— `date` 传时间戳会直接抛异常、整图白屏（时间戳另给 `date_ts`）② 每根柱子是否绘制取决于 `day.available`，缺了它全部显示「No data」 |
+| `get_parental_control_detail` | `pc_status/pc_status_key`、`af_whitelist/mf_whitelist`、`appfilter_rules[].{rule_id,rule_name,mode,category_stats[],time_rules[]}`、`macfilter_rules[].{rule_id,rule_name,mode,match_type,time_rules[],today_status}` | 三个坑：① 应用清单在 uci 里叫 **`app_id`**（不是 `apps`）② 「受限应用」读 `category_stats:[{id:分类号,count}]`，要按 `#class` 分类号汇总 ③ 时间规则读 `start_time`/`end_time`（不是 `start`/`end`） |
+| `get_record_whitelist` | `list[].{mac,hostname,nickname}` + 分页字段 | — |
+| `get_mac_blacklist` | `data.list[].{mac,hostname,nickname}` | 页面用 `code===0` 判断，控制器把 fwxd 的 `2000` 转成 `0` |
+
+**mode 语义**：`appfilter` / `macfilter` 的 uci `mode` 都是 `1=所有设备`、`2=指定设备`。
+`mode=1` 的规则**没有** `user_mac` 字段 —— 若只按 `user_mac` 匹配，这类规则会被整体
+漏掉（它们对所有设备都生效）。聚合时两条判定：`mode==1` 直接算命中本设备，
+`mode==2` 才比对 `user_mac`；`pc_status` 是否算「正在生效」还要看当日时段是否命中
+（`rule_manager` 里没有 `time_rule` 的规则从不生效，这里口径一致）。
+
+**构建期自检**（都排在编译之前，1 分钟内出结果）：
+
+| 脚本 | 作用 |
+|---|---|
+| `scripts/check_api.py` | 界面包 → 控制器 → fwxd 分派表，核对「可达页面用到的每个 api 都存在」 |
+| `scripts/check_c_sanity.py` | 扩展源码机械审查：调用早于定义/声明、宏或标识符未定义、花括号不平衡 —— 这三类是 `-Werror` 判死的，也是 build-23 / build-26 两次失败的真凶（各白跑 80 分钟）。**这一项失败会直接中止构建** |
+| `scripts/patch_fwxd_ext.py` 自校验 | 15 个接口在分派表中、过滤就位、两个 uci 配置文件已安装、特征库 300+ 条 |
 
 ## 四、构建失败时的降级开关
 
@@ -436,7 +460,7 @@ WORKDIR=$HOME/fw-build WITH_KMOD=1 JOBS=$(nproc) bash scripts/build.sh
 | 项 | 说明 |
 |---|---|
 | 无线设置页 | 未包含 `luci-app-fwx-wireless`：它按 fanchmwrt 自家无线 schema 写配置，本机是 mt_wifi7 私有驱动（`mt7992`），配置项对不上。无线仍是 immortalwrt 原生页面（`wireless-mtk`），外观由 fanchmwrt 主题外壳统一 |
-| 特征库 | 出厂精简库仅 221 条（v22.3.24，2022 年）——全量库只在 `api.openappfilter.com` 云端，需订阅 Key（feature 页的在线更新/自定义特征两个区块的界面已存在，但 24.10.4 的 fwxd 没有这些后端 api，官方 api 文档也未收录，属于订阅商业层）。自定义特征/在线更新的后端移植待 Key 渠道确认 |
+| 特征库 | **已升级到社区 v26.4.10（305 条，2026-04）**，随包进 `/etc/fwxd/feature.cfg`；也可直接 `scp` 覆盖 + `/etc/init.d/fwx restart` 免刷机生效。全量库（云端 565 条，月更）下载需订阅 token：`api.openappfilter.com/api/get_feature_list` 匿名可查列表，`download_feature` 返回 `token is required`；官网/文档站无公开申请入口。原出厂库仅 221 条（v22.3.24，2022 年）——这才是「很多新 App 识别不到」的真正原因——全量库只在 `api.openappfilter.com` 云端，需订阅 Key（feature 页的在线更新/自定义特征两个区块的界面已存在，但 24.10.4 的 fwxd 没有这些后端 api，官方 api 文档也未收录，属于订阅商业层）。自定义特征/在线更新的后端移植待 Key 渠道确认 |
 | 网络设置 / 系统配置 / 防火墙 | **已包含** `-network` / `-system` / `-firewall`。前两个只写 `network.lan|wan` 与 `system` 的标准 uci，第三个只写 `firewall.@defaults[0]`，都不碰锐捷私有拓扑。fw4 侧自带 `nft_try_fullcone()` 运行时自检：内核模块缺失时自动降级为普通 masq 并打 warn（`nft_try_fullcone failed`），FullCone 页开关的真正生效前提是 `kmod-nft-fullcone` 已装（构建校验兜底） |
 | 侧边栏 | `menu-fanchmwrt.js` 接管整个菜单渲染，未在图标白名单里的条目回落到 `default` 图标；顺序按 LuCI 的 `menu.d` 排 |
 | fastnat | 依赖 `kmod-shortcut-fe`，与 HNAT 互斥，未包含 |

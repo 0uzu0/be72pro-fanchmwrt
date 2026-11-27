@@ -760,6 +760,48 @@ struct json_object *fwx_api_get_history_traffic_stats(struct json_object *req_ob
     json_object_object_add(data_obj, "total_bytes",
                            json_object_new_int64(total_up + total_down));
     json_object_object_add(data_obj, "list", list_array);
+    /* traffic_stat.htm 的“今日流量统计”读 data.hourly_traffic：
+     * [{hour, traffic:{up_bytes, down_bytes}}]。24.10 的 fwxd 本来就没有这个
+     * 字段，界面这块一直空白，这里从内核实时统计（get_global_traffic_stats）补齐。 */
+    {
+        struct json_object *hourly = json_object_new_array();
+
+        if (hourly) {
+            traffic_stat_t hour_array[HOURS_PER_DAY];
+            int hour;
+
+            memset(hour_array, 0, sizeof(hour_array));
+            get_global_traffic_stats(hour_array);
+            for (hour = 0; hour < HOURS_PER_DAY; hour++) {
+                struct json_object *h_obj = json_object_new_object();
+                struct json_object *t_obj = json_object_new_object();
+
+                if (!h_obj || !t_obj) {
+                    if (h_obj) {
+                        json_object_put(h_obj);
+                    }
+                    if (t_obj) {
+                        json_object_put(t_obj);
+                    }
+                    continue;
+                }
+                json_object_object_add(t_obj, "up_bytes",
+                                       json_object_new_int64(
+                                           (long long)hour_array[hour].up_bytes));
+                json_object_object_add(t_obj, "down_bytes",
+                                       json_object_new_int64(
+                                           (long long)hour_array[hour].down_bytes));
+                json_object_object_add(t_obj, "total_bytes",
+                                       json_object_new_int64(
+                                           (long long)hour_array[hour].up_bytes +
+                                           (long long)hour_array[hour].down_bytes));
+                json_object_object_add(h_obj, "hour", json_object_new_int(hour));
+                json_object_object_add(h_obj, "traffic", t_obj);
+                json_object_array_add(hourly, h_obj);
+            }
+            json_object_object_add(data_obj, "hourly_traffic", hourly);
+        }
+    }
     return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
 }
 
@@ -771,6 +813,7 @@ struct json_object *fwx_api_get_history_traffic_stats(struct json_object *req_ob
 #define EXT_CLASS_TABLE_MAX 1024
 static struct {
     int appid;
+    int class_id;      /* #class 行的分类编号（1 game / 2 video ...），parental detail 的 category_stats 要用 */
     char key[24];
 } g_class_map[EXT_CLASS_TABLE_MAX];
 static int g_class_map_count = 0;
@@ -781,6 +824,7 @@ static void ext_class_map_load(void)
     FILE *fp = fopen("/tmp/feature.cfg", "r");
     char line[2048] = {0};
     char cur_key[24] = {0};
+    int cur_class_id = 0;
 
     g_class_map_count = 0;
     g_class_map_ts = time(NULL);
@@ -790,8 +834,11 @@ static void ext_class_map_load(void)
     while (fgets(line, sizeof(line), fp)) {
         if (strncmp(line, "#class", 6) == 0) {
             char key[24] = {0};
-            if (sscanf(line + 6, "%23s", key) == 1) {
+            int class_id = 0;
+            /* 格式：#class <key> <id> <中文名>（gen_class.sh 按 $3/$2/$4 生成 app_class.txt） */
+            if (sscanf(line + 6, "%23s %d", key, &class_id) >= 1) {
                 snprintf(cur_key, sizeof(cur_key), "%s", key);
+                cur_class_id = class_id;
             }
             continue;
         }
@@ -800,6 +847,7 @@ static void ext_class_map_load(void)
             int appid = atoi(line);
             if (appid > 0) {
                 g_class_map[g_class_map_count].appid = appid;
+                g_class_map[g_class_map_count].class_id = cur_class_id;
                 snprintf(g_class_map[g_class_map_count].key,
                          sizeof(g_class_map[g_class_map_count].key), "%s", cur_key);
                 g_class_map_count++;
@@ -822,6 +870,22 @@ static const char *ext_class_of_appid(int appid)
         }
     }
     return NULL;
+}
+
+/* appid → 分类编号（未收录返回 0），parental detail 的 category_stats 用 */
+static int ext_class_id_of_appid(int appid)
+{
+    int i;
+
+    if (g_class_map_ts == 0 || difftime(time(NULL), g_class_map_ts) > 300.0) {
+        ext_class_map_load();
+    }
+    for (i = 0; i < g_class_map_count; i++) {
+        if (g_class_map[i].appid == appid) {
+            return g_class_map[i].class_id;
+        }
+    }
+    return 0;
 }
 
 static const char *EXT_CATEGORY_KEYS[5] = {"game", "video", "chat", "shopping", "music"};
@@ -1062,8 +1126,14 @@ struct json_object *fwx_api_get_user_daily_summary(struct json_object *req_obj)
             }
         }
 
-        json_object_object_add(day_obj, "date", json_object_new_int64((int64_t)date));
+        /* user_history.htm 的横轴是 data: list.map(day => day.date) 且
+         * axisLabel 里做 date.slice(5) —— date 必须是 "YYYY-MM-DD" 字符串，
+         * 传时间戳会让 slice 抛异常、整张图渲染失败。时间戳另给 date_ts。 */
+        json_object_object_add(day_obj, "date", json_object_new_string(date_str));
         json_object_object_add(day_obj, "date_str", json_object_new_string(date_str));
+        json_object_object_add(day_obj, "date_ts", json_object_new_int64((int64_t)date));
+        json_object_object_add(day_obj, "available",
+                               json_object_new_int((up + down + active + online) > 0 ? 1 : 0));
         json_object_object_add(day_obj, "up_bytes", json_object_new_int64(up));
         json_object_object_add(day_obj, "down_bytes", json_object_new_int64(down));
         json_object_object_add(day_obj, "active_seconds", json_object_new_int64(active));
@@ -1438,6 +1508,99 @@ struct json_object *fwx_api_get_system_base_info(struct json_object *req_obj)
  * 25.12 的版本从家长控制缓存 JSON 读；24.10 没有那套缓存，这里直接从
  * uci 规则实时聚合，语义一致、无缓存时差。
  */
+/* 解析 <pkg>.@rule[idx].time_rule 时间规则，输出到 time_array。
+ * 格式与 rule_manager.lua 一致：多段用空格分隔，每段 "周几,HH:MM,HH:MM"
+ * （周几可多个、也可省略）。返回 1 表示当前时间落在任一段内（今日生效）。 */
+static int ext_parse_rule_time_rules(struct uci_context *ctx, const char *pkgname,
+                                     int idx, struct json_object *time_array)
+{
+    char path[128] = {0};
+    char buf[1024] = {0};
+    int effective_today = 0;
+    time_t now_t = time(NULL);
+    struct tm now_buf;
+    struct tm *now_tm = localtime_r(&now_t, &now_buf);
+    char *seg = NULL;
+    char *save = NULL;
+
+    if (!ctx || !pkgname || !time_array) {
+        return 0;
+    }
+    snprintf(path, sizeof(path), "%s.@rule[%d].time_rule", pkgname, idx);
+    if (fwx_uci_get_list_value(ctx, path, buf, sizeof(buf), " ") != 0 || buf[0] == '\0') {
+        return 0;
+    }
+
+    for (seg = strtok_r(buf, " ", &save); seg; seg = strtok_r(NULL, " ", &save)) {
+        char tmp[256] = {0};
+        char *token = NULL;
+        char *tsave = NULL;
+        char *start_time = NULL;
+        char *end_time = NULL;
+        struct json_object *tr_obj = json_object_new_object();
+        struct json_object *weekdays = json_object_new_array();
+        int match_today = 0;
+        int has_weekday = 0;
+
+        if (!tr_obj || !weekdays) {
+            if (tr_obj) {
+                json_object_put(tr_obj);
+            }
+            if (weekdays) {
+                json_object_put(weekdays);
+            }
+            continue;
+        }
+        snprintf(tmp, sizeof(tmp), "%s", seg);
+        for (token = strtok_r(tmp, ",", &tsave); token; token = strtok_r(NULL, ",", &tsave)) {
+            if (strchr(token, ':') != NULL) {
+                if (!start_time) {
+                    start_time = token;
+                } else if (!end_time) {
+                    end_time = token;
+                }
+            } else {
+                int wd = atoi(token);
+                if (wd >= 0 && wd <= 6) {
+                    struct json_object *wd_obj = json_object_new_int(wd);
+                    if (wd_obj) {
+                        json_object_array_add(weekdays, wd_obj);
+                    }
+                    if (now_tm && wd == now_tm->tm_wday) {
+                        match_today = 1;
+                    }
+                    has_weekday = 1;
+                }
+            }
+        }
+        if (start_time && end_time && (!has_weekday || match_today)) {
+            int sh = 0;
+            int sm = 0;
+            int eh = 0;
+            int em = 0;
+            int now_min = now_tm ? now_tm->tm_hour * 60 + now_tm->tm_min : -1;
+
+            sscanf(start_time, "%d:%d", &sh, &sm);
+            sscanf(end_time, "%d:%d", &eh, &em);
+            if (now_min >= sh * 60 + sm && now_min <= eh * 60 + em) {
+                effective_today = 1;
+            }
+        }
+
+        json_object_object_add(tr_obj, "weekdays", weekdays);
+        json_object_object_add(tr_obj, "start_time",
+                               json_object_new_string(start_time ? start_time : ""));
+        json_object_object_add(tr_obj, "end_time",
+                               json_object_new_string(end_time ? end_time : ""));
+        json_object_object_add(tr_obj, "start",
+                               json_object_new_string(start_time ? start_time : ""));
+        json_object_object_add(tr_obj, "end",
+                               json_object_new_string(end_time ? end_time : ""));
+        json_object_array_add(time_array, tr_obj);
+    }
+    return effective_today;
+}
+
 /* macfilter 规则聚合（time 规则 + 黑名单条目），parental rules/detail 两个接口共用。
  * match_type: time_range（命中时段规则）/ blacklist（命中设备黑名单）。 */
 static void ext_collect_macfilter_rules(struct json_object *arr, const char *norm,
@@ -1460,10 +1623,12 @@ static void ext_collect_macfilter_rules(struct json_object *arr, const char *nor
         char mac_str[EXT_MAC_LEN] = {0};
         char enabled_str[16] = {0};
         char time_buf[1024] = {0};
+        char mode_str[16] = {0};
         struct json_object *rule_obj = NULL;
         struct json_object *time_array = NULL;
         int enabled = 1;
         int effective_today = 0;
+        int rule_mode = 1;   /* 1=所有设备 2=指定设备（界面 getModeText 的判定） */
 
         snprintf(path, sizeof(path), "macfilter.@rule[%d].id", i);
         if (fwx_uci_get_value(ctx, path, id_str, sizeof(id_str)) != 0) {
@@ -1477,8 +1642,14 @@ static void ext_collect_macfilter_rules(struct json_object *arr, const char *nor
         if (fwx_uci_get_value(ctx, path, enabled_str, sizeof(enabled_str)) == 0) {
             enabled = atoi(enabled_str);
         }
+        snprintf(path, sizeof(path), "macfilter.@rule[%d].mode", i);
+        if (fwx_uci_get_value(ctx, path, mode_str, sizeof(mode_str)) == 0 && mode_str[0] != '\0') {
+            rule_mode = atoi(mode_str) == 2 ? 2 : 1;
+        }
 
-        if (!enabled || !ext_mac_equal(mac_str, norm)) {
+        /* mode=1 是"所有设备"规则（没有 user_mac），对本设备同样生效；
+         * mode=2 才按 user_mac 精确匹配（macfilter.@rule 的 uci mode 语义） */
+        if (!enabled || (rule_mode != 1 && !ext_mac_equal(mac_str, norm))) {
             continue;
         }
 
@@ -1497,6 +1668,7 @@ static void ext_collect_macfilter_rules(struct json_object *arr, const char *nor
         json_object_object_add(rule_obj, "module", json_object_new_string("macfilter"));
         json_object_object_add(rule_obj, "rule_id", json_object_new_int(atoi(id_str)));
         json_object_object_add(rule_obj, "rule_name", json_object_new_string(name_str));
+        json_object_object_add(rule_obj, "mode", json_object_new_int(rule_mode));
         json_object_object_add(rule_obj, "match_type", json_object_new_string("time_range"));
 
         snprintf(path, sizeof(path), "macfilter.@rule[%d].time_rule", i);
@@ -1566,6 +1738,13 @@ static void ext_collect_macfilter_rules(struct json_object *arr, const char *nor
                 }
 
                 json_object_object_add(tr_obj, "weekdays", weekdays);
+                /* 界面（user_detail.htm 的 format_behavior_time_rules、user_status.htm
+                 * 的 formatTimeRuleText）读的是 start_time / end_time；
+                 * 同时保留 start / end 供其他消费方使用 */
+                json_object_object_add(tr_obj, "start_time",
+                                       json_object_new_string(start_time ? start_time : ""));
+                json_object_object_add(tr_obj, "end_time",
+                                       json_object_new_string(end_time ? end_time : ""));
                 json_object_object_add(tr_obj, "start",
                                        json_object_new_string(start_time ? start_time : ""));
                 json_object_object_add(tr_obj, "end",
@@ -1587,7 +1766,11 @@ static void ext_collect_macfilter_rules(struct json_object *arr, const char *nor
             }
         }
         json_object_array_add(arr, rule_obj);
-        *matched = 1;
+        /* 只有今日时段命中才算"正在生效"：rule_manager 里没有 time_rule 的规则
+         * 从不生效（is_time_in_range 返回 false），这里保持一致 */
+        if (effective_today) {
+            *matched = 1;
+        }
     }
     uci_free_context(ctx);
 
@@ -1597,8 +1780,8 @@ static void ext_collect_macfilter_rules(struct json_object *arr, const char *nor
         if (rule_obj) {
             json_object_object_add(rule_obj, "module", json_object_new_string("macfilter"));
             json_object_object_add(rule_obj, "rule_id", json_object_new_int(0));
-            json_object_object_add(rule_obj, "rule_name", json_object_new_string("Blacklist"));
-            json_object_object_add(rule_obj, "mode", json_object_new_int(1));
+            json_object_object_add(rule_obj, "rule_name", json_object_new_string("Internet Blacklist"));
+            json_object_object_add(rule_obj, "mode", json_object_new_int(2));   /* 指定设备 */
             json_object_object_add(rule_obj, "match_type", json_object_new_string("blacklist"));
             json_object_object_add(rule_obj, "start_time", json_object_new_string(""));
             json_object_object_add(rule_obj, "end_time", json_object_new_string(""));
@@ -1626,10 +1809,11 @@ static void ext_detail_appfilter_rules(struct json_object *arr, const char *norm
         char mac_str[EXT_MAC_LEN] = {0};
         char enabled_str[16] = {0};
         int enabled = 1;
+        int af_mode = 1;    /* 1=所有设备 2=指定设备 */
+        int af_active = 0;  /* 今日时段是否命中 */
         struct json_object *rule_obj = NULL;
         struct json_object *app_list = NULL;
         int app_count = 0;
-        int k;
 
         snprintf(path, sizeof(path), "appfilter.@rule[%d].id", i);
         if (fwx_uci_get_value(ctx, path, id_str, sizeof(id_str)) != 0) {
@@ -1643,8 +1827,19 @@ static void ext_detail_appfilter_rules(struct json_object *arr, const char *norm
         if (fwx_uci_get_value(ctx, path, enabled_str, sizeof(enabled_str)) == 0) {
             enabled = atoi(enabled_str);
         }
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].mode", i);
+        {
+            char mode_str[16] = {0};
 
-        if (!enabled || !ext_mac_equal(mac_str, norm)) {
+            if (fwx_uci_get_value(ctx, path, mode_str, sizeof(mode_str)) == 0 &&
+                mode_str[0] != '\0') {
+                af_mode = atoi(mode_str) == 2 ? 2 : 1;
+            }
+        }
+
+        /* mode=1 是"所有设备"规则（没有 user_mac），对本设备同样生效；
+         * mode=2 才按 user_mac 精确匹配 */
+        if (!enabled || (af_mode != 1 && !ext_mac_equal(mac_str, norm))) {
             continue;
         }
 
@@ -1661,61 +1856,99 @@ static void ext_detail_appfilter_rules(struct json_object *arr, const char *norm
         }
         json_object_object_add(rule_obj, "rule_id", json_object_new_int(atoi(id_str)));
         json_object_object_add(rule_obj, "rule_name", json_object_new_string(name_str));
-        snprintf(path, sizeof(path), "appfilter.@rule[%d].mode", i);
+        json_object_object_add(rule_obj, "mode", json_object_new_int(af_mode));
         {
-            char mode_str[16] = {0};
-            fwx_uci_get_value(ctx, path, mode_str, sizeof(mode_str));
-            json_object_object_add(rule_obj, "mode", json_object_new_int(atoi(mode_str)));
+            struct json_object *af_time_rules = json_object_new_array();
+            if (af_time_rules) {
+                af_active = ext_parse_rule_time_rules(ctx, "appfilter", i, af_time_rules);
+                struct json_object *af_status = json_object_new_object();
+
+                json_object_object_add(rule_obj, "time_rules", af_time_rules);
+                if (af_status) {
+                    json_object_object_add(af_status, "effective_today",
+                                           json_object_new_int(af_active));
+                    json_object_object_add(af_status, "unlimited", json_object_new_int(0));
+                    json_object_object_add(rule_obj, "today_status", af_status);
+                }
+            }
         }
         json_object_object_add(rule_obj, "start_time", json_object_new_string(""));
         json_object_object_add(rule_obj, "end_time", json_object_new_string(""));
 
-        /* 命中的应用清单：appfilter.@rule[i].apps（list，偶发单值 option 都兼容） */
-        snprintf(path, sizeof(path), "appfilter.@rule[%d].apps", i);
+        /* 命中的应用清单：uci 键名是 app_id（rule_manager.lua 的
+         * load_appfilter_rules 读 section.app_id），list 与单值 option 都兼容 */
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].app_id", i);
         {
             char apps_buf[1024] = {0};
+            int id_list[128] = {0};
+            int class_hit[64] = {0};   /* class_id → app 个数（给 category_stats） */
+            int n_ids = 0;
+            int j;
+
             if (fwx_uci_get_list_value(ctx, path, apps_buf, sizeof(apps_buf), " ") == 0 &&
                 apps_buf[0] != '\0') {
-                char *p = NULL;
-                char *save = NULL;
-                for (p = strtok_r(apps_buf, " \t", &save); p && app_count < 64;
-                     p = strtok_r(NULL, " \t", &save)) {
-                    int appid = atoi(p);
+                char *ap = NULL;
+                char *asave = NULL;
+                for (ap = strtok_r(apps_buf, " \t", &asave); ap && n_ids < 128;
+                     ap = strtok_r(NULL, " \t", &asave)) {
+                    int appid = atoi(ap);
                     if (appid > 0) {
-                        struct json_object *app_obj = json_object_new_object();
-                        if (app_obj) {
-                            json_object_object_add(app_obj, "id", json_object_new_int(appid));
-                            json_object_object_add(app_obj, "name",
-                                                   json_object_new_string(get_app_name_by_id(appid)));
-                            json_object_array_add(app_list, app_obj);
-                            app_count++;
-                        }
+                        id_list[n_ids++] = appid;
                     }
                 }
             } else {
                 /* 单值 option 兜底 */
-                {
-                    char one[32] = {0};
-                    if (fwx_uci_get_value(ctx, path, one, sizeof(one)) == 0) {
-                        int appid = atoi(one);
-                        if (appid > 0) {
-                            struct json_object *app_obj = json_object_new_object();
-                            if (app_obj) {
-                                json_object_object_add(app_obj, "id", json_object_new_int(appid));
-                                json_object_object_add(app_obj, "name",
-                                                       json_object_new_string(get_app_name_by_id(appid)));
-                                json_object_array_add(app_list, app_obj);
-                                app_count++;
+                char one[32] = {0};
+                if (fwx_uci_get_value(ctx, path, one, sizeof(one)) == 0) {
+                    int appid = atoi(one);
+                    if (appid > 0) {
+                        id_list[n_ids++] = appid;
+                    }
+                }
+            }
+
+            for (j = 0; j < n_ids; j++) {
+                struct json_object *app_obj = json_object_new_object();
+                int cid = ext_class_id_of_appid(id_list[j]);
+
+                if (app_obj) {
+                    json_object_object_add(app_obj, "id", json_object_new_int(id_list[j]));
+                    json_object_object_add(app_obj, "name",
+                                           json_object_new_string(get_app_name_by_id(id_list[j])));
+                    json_object_array_add(app_list, app_obj);
+                    app_count++;
+                }
+                if (cid > 0 && cid < 64) {
+                    class_hit[cid]++;
+                }
+            }
+
+            /* category_stats：user_status.htm 的“受限应用”一行读的是
+             * rule.category_stats（[{id: 分类号, count: 个数}]），
+             * 分类号与 #class 行一致（/tmp/app_class.txt 的 $1） */
+            {
+                struct json_object *stats = json_object_new_array();
+                if (stats) {
+                    for (j = 1; j < 64; j++) {
+                        if (class_hit[j] > 0) {
+                            struct json_object *item = json_object_new_object();
+                            if (item) {
+                                json_object_object_add(item, "id", json_object_new_int(j));
+                                json_object_object_add(item, "count",
+                                                       json_object_new_int(class_hit[j]));
+                                json_object_array_add(stats, item);
                             }
                         }
                     }
+                    json_object_object_add(rule_obj, "category_stats", stats);
                 }
             }
         }
 
         json_object_object_add(rule_obj, "app_list", app_list);
         json_object_array_add(arr, rule_obj);
-        if (app_count > 0) {
+        /* 与 macfilter 同口径：今日时段命中 + 规则里确实有应用，才算正在生效 */
+        if (app_count > 0 && af_active) {
             *matched = 1;
         }
     }
