@@ -121,6 +121,16 @@ jobs:
           echo "---- out ----"
           ls -lh out || true
 
+      - name: Build ipk bundle
+        if: always()
+        run: |
+          # 把上面收集的 ipk 打成一个整合包：路由器上 wget + sh 一条命令装完
+          bash scripts/make_bundle.sh out/ipk out "${{ github.run_number }}" \
+            "$WORKDIR/MT798X-6.6-24.10" || echo "[warn] 整合包生成失败（不影响固件产物）"
+          # 在线升级器本身也一起发（只需装到路由器一次）
+          cp -v scripts/fwx-update.sh out/ 2>/dev/null || true
+          ls -lh out/*.tar.gz* 2>/dev/null || true
+
       - name: Upload firmware
         if: success()
         uses: actions/upload-artifact@v4
@@ -131,6 +141,9 @@ jobs:
             out/*.manifest
             out/sha256sums
             out/ipk/*
+            out/*.tar.gz
+            out/*.tar.gz.sha256
+            out/fwx-update.sh
           retention-days: 30
 
       - name: Upload build log
@@ -162,14 +175,30 @@ jobs:
 
             **刷整机**（内核/DTS/底座变化时必须）：`sysupgrade -n <sysupgrade.bin>`（232.5 MiB 布局）
 
-            **免刷机升级**（接口/页面/样式/特征库/fwx.ko 变化）：
+            **免刷机升级 · 整合包**（推荐，一个文件搞定）：
+            ```
+            # 路由器上执行（需外网；国内慢可用 --url 指向自建镜像）
+            wget -O /tmp/pkg.tar.gz <本页 be72pro-fwx-pkg-*.tar.gz 的直链>
+            mkdir -p /tmp/pkg && tar -xzf /tmp/pkg.tar.gz -C /tmp/pkg
+            sh /tmp/pkg/be72pro-fwx-pkg-*/install.sh
+            ```
+            或装一次在线升级器 `fwx-update.sh` 到 `/usr/sbin/fwx-update`，之后只需：
+            ```
+            fwx-update --check    # 看有没有新版
+            fwx-update            # 下载+校验+安装
+            ```
+
+            **免刷机升级 · 散装 ipk**：
             ```
             scp -r ipk/ root@路由器:/tmp/ipk
             ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh'
             ```
-            ipk 必须与本机固件同一次构建产出（opkg 会校验内核版本，不匹配会拒绝）。
+            整合包与本机固件必须是同一次构建产出（会校验内核版本，不匹配会拒绝安装）。
           files: |
             out/*.bin
             out/*.manifest
             out/sha256sums
             out/ipk/*
+            out/*.tar.gz
+            out/*.tar.gz.sha256
+            out/fwx-update.sh

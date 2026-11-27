@@ -52,7 +52,10 @@ git push -u origin main
 immortalwrt-mediatek-filogic-ruijie_rg-be72-pro-mod-squashfs-sysupgrade.bin        ← 232.5M 布局（推荐）
 immortalwrt-mediatek-filogic-ruijie_rg-be72-pro-dsa-mod-squashfs-sysupgrade.bin    ← DSA 交换机版
 sha256sums
-ipk/                                                                               ← 免刷机升级用（见下）
+be72pro-fwx-pkg-<run号>.tar.gz                                                     ← 整合包：一个文件装完（见下）
+be72pro-fwx-pkg-<run号>.tar.gz.sha256
+fwx-update.sh                                                                      ← 在线升级器（装到路由器一次）
+ipk/                                                                               ← 散装包（只更某个包时用）
   fwxd_*.ipk  libfwx_common_*.ipk  kmod-fwx_*.ipk
   luci-app-fwx-*_*.ipk  luci-i18n-fwx-*_*.ipk  luci-theme-fanchmwrt_*.ipk
   router-upgrade.sh
@@ -69,18 +72,53 @@ ipk/                                                                            
 | LuCI 页面 / 主题样式层 | `luci-app-fwx-*` / `luci-theme-fanchmwrt`，**不用刷机** |
 | 内核补丁（980 nf_conn）、DTS、defconfig、换底座版本 | **必须刷整机** |
 
-免刷机升级（在路由器上执行，30 秒，不重启）：
+### 方式一：整合包（推荐，一个文件）
+
+每次构建会额外产出一个 **`be72pro-fwx-pkg-<run号>.tar.gz`**（几 MB），里面是全部 ipk +
+安装器 + 版本清单 + 校验和。路由器上一条命令装完：
+
+```sh
+wget -O /tmp/pkg.tar.gz <Release 里 be72pro-fwx-pkg-*.tar.gz 的直链>
+mkdir -p /tmp/pkg && tar -xzf /tmp/pkg.tar.gz -C /tmp/pkg
+sh /tmp/pkg/be72pro-fwx-pkg-*/install.sh
+```
+
+安装器会先做两道校验再动手：**sha256 完整性**（包内每个 ipk）+ **目标内核版本**
+（与 `uname -r` 比对，不一致直接拒绝 —— 装错内核模块固件会起不来）。然后停 `fwx` →
+（带 `kmod-fwx` 时）`rmmod fwx` → 按「库 → 主程序 → 内核模块 → 界面 → 主题」顺序
+`opkg install --force-reinstall` → 起服务 → 清 LuCI 缓存 → 打印验证结果，并把版本写进
+`/etc/fwx_pkg_build`。
+
+### 方式二：在线升级器（装一次，以后一条命令）
+
+把 `fwx-update.sh` 放到路由器上（只需一次）：
+
+```sh
+scp scripts/fwx-update.sh root@192.168.1.1:/usr/sbin/fwx-update
+ssh root@192.168.1.1 'chmod +x /usr/sbin/fwx-update'
+```
+
+之后：
+
+```sh
+fwx-update --check     # 看有没有新版本（对比 /etc/fwx_pkg_build）
+fwx-update             # 自动查最新 release → 下载 → 校验 → 安装
+fwx-update --url <URL> # 走自建镜像：直接指定整合包直链
+fwx-update --force     # 跳过内核校验（不建议）
+```
+
+`fwx-update` 默认查 `api.github.com`，国内路由器可能很慢或不通 —— 这时用 `--url`
+指向自己的镜像（如 `https://<你的域名>/fwx/be72pro-fwx-pkg-31.tar.gz`）。CI 也会在整合包旁
+发布同名 `.sha256`，`fwx-update` 下载后会先验整包再解压。
+
+### 方式三：散装 ipk（只更某一个包时）
 
 ```sh
 scp -r ipk/ root@192.168.1.1:/tmp/ipk
 ssh root@192.168.1.1 'sh /tmp/ipk/router-upgrade.sh'
 ```
 
-脚本会：停 `fwx` → （带 `kmod-fwx` 时）`rmmod fwx` → 按「库 → 主程序 → 内核模块 → 界面 → 主题」顺序
-`opkg install --force-reinstall` → 起服务 → 清 LuCI 缓存 → 打印验证结果（模块是否加载、
-`ubus` 是否应答、特征库条目数、黑名单规则日志条数）。
-
-只装某一个包也行：`ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh /tmp/ipk/fwxd_*.ipk'`。
+只装某一个也行：`ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh /tmp/ipk/fwxd_*.ipk'`。
 
 **三条硬约束**：
 
