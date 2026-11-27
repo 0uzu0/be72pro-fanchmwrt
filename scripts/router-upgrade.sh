@@ -1,13 +1,10 @@
 #!/bin/sh
-# be72pro-fanchmwrt —— 整合包安装器（也可直接装一个 ipk 目录）
+# be72pro-fanchmwrt —— 整合包安装器（只在整合包里运行）
 #
-# 两种用法：
-#   1) 整合包（推荐）：解包后执行包内 install.sh，会自动校验内核版本与文件完整性
-#        tar -xzf be72pro-fwx-pkg-31.tar.gz -C /tmp
-#        sh /tmp/be72pro-fwx-pkg-31/install.sh
-#   2) 散装 ipk 目录：
-#        scp -r out/ipk root@路由器:/tmp/ipk
-#        ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh'
+#   tar -xzf be72pro-fwx-pkg-<版本>-b<构建号>.tar.gz -C /tmp
+#   sh /tmp/be72pro-fwx-pkg-*/install.sh
+#
+# 安装前会校验：① 包内每个 ipk 的 sha256 ② 目标内核版本与本机 uname -r
 #
 # 参数：--force 跳过内核版本校验（不建议；装错内核模块会直接起不来）
 #
@@ -17,69 +14,56 @@
 set -u
 
 FORCE=0
-ARG=""
 for a in "$@"; do
 	case "$a" in
 		--force|-f) FORCE=1 ;;
-		*) ARG="$a" ;;
+		*) echo "[upgrade] 忽略未知参数：$a" ;;
 	esac
 done
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-MANIFEST=""
-[ -f "$SCRIPT_DIR/manifest" ] && MANIFEST="$SCRIPT_DIR/manifest"
+MANIFEST="$SCRIPT_DIR/manifest"
 
 log() { echo "[upgrade] $*"; }
 die() { echo "[upgrade][FATAL] $*" >&2; exit 1; }
 
-# ---------- 0. 定位 ipk 目录 ----------
-if [ -n "$ARG" ]; then
-	DIR="$ARG"
-elif [ -d "$SCRIPT_DIR/ipk" ]; then
-	DIR="$SCRIPT_DIR/ipk"
-else
-	DIR="/tmp/ipk"
-fi
+# ---------- 0. 只接受整合包 ----------
+[ -f "$MANIFEST" ] || die "这个安装器要在整合包里运行 —— 请用 be72pro-fwx-pkg-*.tar.gz 解包后执行包内 install.sh"
 
-if [ -d "$DIR" ]; then
-	PKGS=$(ls "$DIR"/*.ipk 2>/dev/null)
-else
-	PKGS=$(ls $DIR 2>/dev/null)
-fi
-[ -n "${PKGS:-}" ] || die "没找到 .ipk（路径：$DIR）"
+DIR="$SCRIPT_DIR/ipk"
+[ -d "$DIR" ] || die "整合包里没有 ipk/ 目录（包不完整，重新下载）"
+PKGS=$(ls "$DIR"/*.ipk 2>/dev/null)
+[ -n "${PKGS:-}" ] || die "ipk/ 目录里没有包（包不完整，重新下载）"
 
 # ---------- 1. 整合包校验 ----------
-m_build=""
-m_kernel=""
-if [ -n "$MANIFEST" ]; then
-	m_build=$(sed -n 's/^build=//p' "$MANIFEST" | head -1)
-	m_kernel=$(sed -n 's/^kernel=//p' "$MANIFEST" | head -1)
-	m_commit=$(sed -n 's/^commit=//p' "$MANIFEST" | head -1)
-	cur_kernel=$(uname -r)
+m_version=$(sed -n 's/^version=//p' "$MANIFEST" | head -1)
+m_build=$(sed -n 's/^build=//p' "$MANIFEST" | head -1)
+m_kernel=$(sed -n 's/^kernel=//p' "$MANIFEST" | head -1)
+m_commit=$(sed -n 's/^commit=//p' "$MANIFEST" | head -1)
+cur_kernel=$(uname -r)
 
-	log "整合包信息：build=$m_build  commit=$m_commit  目标内核=$m_kernel"
+log "整合包：v${m_version:-?} (build ${m_build:-?})  commit=${m_commit:-?}  目标内核=${m_kernel:-?}"
 
-	if [ -f "$SCRIPT_DIR/sha256sums" ] && command -v sha256sum >/dev/null 2>&1; then
-		if ( cd "$SCRIPT_DIR" && sha256sum -c sha256sums >/dev/null 2>&1 ); then
-			log "完整性校验通过（sha256）"
-		else
-			die "整合包校验失败 —— 下载不完整或被改过，请重新下载"
-		fi
+if [ -f "$SCRIPT_DIR/sha256sums" ] && command -v sha256sum >/dev/null 2>&1; then
+	if ( cd "$SCRIPT_DIR" && sha256sum -c sha256sums >/dev/null 2>&1 ); then
+		log "完整性校验通过（sha256）"
+	else
+		die "整合包校验失败 —— 下载不完整或被改过，请重新下载"
 	fi
+fi
 
-	# 内核版本未知时不做拦截（只警告）：说明打包时没读到内核 release，
-	# 这种情况下 opkg 自身的 kernel 依赖校验仍是最后一道防线。
-	if [ -n "$m_kernel" ] && [ "$m_kernel" = "unknown" ]; then
-		log "[警告] 整合包没记录目标内核版本，跳过版本校验（opkg 仍会校验依赖）"
-	fi
-	if [ -n "$m_kernel" ] && [ "$m_kernel" != "unknown" ] && [ "$m_kernel" != "$cur_kernel" ]; then
-		if [ "$FORCE" = "1" ]; then
-			log "[警告] 内核版本不匹配（包 $m_kernel / 本机 $cur_kernel），已按 --force 继续"
-		else
-			die "内核版本不匹配：包是 $m_kernel，本机是 $cur_kernel。
+# 内核版本未知时不做拦截（只警告）：说明打包时没读到内核 release，
+# 这种情况下 opkg 自身的 kernel 依赖校验仍是最后一道防线。
+if [ -n "$m_kernel" ] && [ "$m_kernel" = "unknown" ]; then
+	log "[警告] 整合包没记录目标内核版本，跳过版本校验（opkg 仍会校验依赖）"
+fi
+if [ -n "$m_kernel" ] && [ "$m_kernel" != "unknown" ] && [ "$m_kernel" != "$cur_kernel" ]; then
+	if [ "$FORCE" = "1" ]; then
+		log "[警告] 内核版本不匹配（包 $m_kernel / 本机 $cur_kernel），已按 --force 继续"
+	else
+		die "内核版本不匹配：包是 $m_kernel，本机是 $cur_kernel。
      这个包不是给当前固件构建的 —— fwx.ko 装上去也加载不了。
      正确做法：用与本机固件同批次的整合包；确要强装加 --force。"
-		fi
 	fi
 fi
 
@@ -186,9 +170,8 @@ if [ "$FAIL" = "1" ]; then
 fi
 
 # 装成功才记录版本，供 fwx-update --check 比对
-if [ -n "$MANIFEST" ] && [ -n "$m_build" ]; then
-	echo "$m_build" > /etc/fwx_pkg_build 2>/dev/null || true
-	log "已记录组件版本：$m_build（/etc/fwx_pkg_build）"
-fi
+[ -n "$m_version" ] && echo "$m_version" > /etc/fwx_pkg_version 2>/dev/null || true
+[ -n "$m_build" ] && echo "$m_build" > /etc/fwx_pkg_build 2>/dev/null || true
+log "已记录组件版本：v${m_version:-?} (build ${m_build:-?}) → /etc/fwx_pkg_version"
 
-echo "[upgrade] 完成。界面刷新一下（CSS/JS 有浏览器缓存，必要时 Ctrl+F5）。"
+echo "[upgrade] 完成（v${m_version:-?} / build ${m_build:-?}）。界面刷新一下（CSS/JS 有浏览器缓存，必要时 Ctrl+F5）。"

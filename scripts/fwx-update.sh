@@ -17,7 +17,8 @@ set -u
 REPO="${FWX_REPO:-0uzu0/be72pro-fanchmwrt}"
 API="https://api.github.com/repos/$REPO/releases"
 TMP="/tmp/fwx-update"
-MARKER="/etc/fwx_pkg_build"
+MARKER_VER="/etc/fwx_pkg_version"
+MARKER_BUILD="/etc/fwx_pkg_build"
 
 CHECK_ONLY=0
 FORCE=""
@@ -73,17 +74,20 @@ if [ -z "$URL" ]; then
 	[ -n "${URL:-}" ] || die "最新发布里没有整合包（可能这次构建没产出）；可用 --url 指定直链"
 fi
 
-NEW_BUILD=$(echo "$URL" | sed -n 's/.*be72pro-fwx-pkg-\([0-9][0-9]*\)\.tar\.gz.*/\1/p')
-CUR_BUILD=$(cat "$MARKER" 2>/dev/null || echo "未知")
+# 文件名格式：be72pro-fwx-pkg-<版本>-b<构建号>.tar.gz
+NEW_VER=$(echo "$URL" | sed -n 's/.*be72pro-fwx-pkg-\([0-9][0-9.]*\)-b[0-9][0-9]*\.tar\.gz.*/\1/p')
+NEW_BUILD=$(echo "$URL" | sed -n 's/.*be72pro-fwx-pkg-[0-9][0-9.]*-b\([0-9][0-9]*\)\.tar\.gz.*/\1/p')
+CUR_VER=$(cat "$MARKER_VER" 2>/dev/null || echo "未知")
+CUR_BUILD=$(cat "$MARKER_BUILD" 2>/dev/null || echo "未知")
 
-log "最新整合包：${URL##*/}"
-log "当前组件版本：$CUR_BUILD"
+log "最新整合包：${URL##*/}  →  v${NEW_VER:-?} (build ${NEW_BUILD:-?})"
+log "当前组件版本：v$CUR_VER (build $CUR_BUILD)"
 
 if [ "$CHECK_ONLY" = "1" ]; then
-	if [ -n "$NEW_BUILD" ] && [ "$NEW_BUILD" = "$CUR_BUILD" ]; then
-		echo "已是最新（$CUR_BUILD）。"
+	if [ -n "$NEW_VER" ] && [ "$NEW_VER" = "$CUR_VER" ] && [ "$NEW_BUILD" = "$CUR_BUILD" ]; then
+		echo "已是最新：v$CUR_VER (build $CUR_BUILD)。"
 	else
-		echo "有新版本：$NEW_BUILD（当前 $CUR_BUILD）"
+		echo "有新版本：v${NEW_VER:-?} (build ${NEW_BUILD:-?})，当前 v$CUR_VER (build $CUR_BUILD)"
 	fi
 	exit 0
 fi
@@ -119,7 +123,7 @@ log "开始安装…"
 sh "$INSTALL" ${FORCE:+"$FORCE"}
 RC=$?
 if [ $RC -eq 0 ]; then
-	log "完成。版本已记为 $(cat "$MARKER" 2>/dev/null || echo '?')"
+	log "完成。版本已记为 v$(cat "$MARKER_VER" 2>/dev/null || echo '?') (build $(cat "$MARKER_BUILD" 2>/dev/null || echo '?'))"
 else
 	echo "[fwx-update] 安装返回 $RC —— 看上面的 [upgrade] 输出定位"
 fi

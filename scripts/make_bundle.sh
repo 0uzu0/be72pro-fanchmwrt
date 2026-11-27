@@ -49,8 +49,13 @@ if [ -z "$KREL" ]; then
 	echo "[bundle][!] 整合包会跳过内核校验，安装器只能靠 opkg 的依赖检查兜底。"
 fi
 
-COMMIT=$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/null || echo unknown)
-NAME="be72pro-fwx-pkg-${BUILD}"
+REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+COMMIT=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+# 版本号来自仓库根的 VERSION（每次推送改动都要 bump，整合包名与清单里都带上，
+# 升级时一眼能看出装的是哪一版）
+VER=$(head -1 "$REPO_ROOT/VERSION" 2>/dev/null | tr -d ' \r\n')
+[ -n "$VER" ] || VER="0.0.0"
+NAME="be72pro-fwx-pkg-${VER}-b${BUILD}"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 ROOT="$STAGE/$NAME"
@@ -63,6 +68,7 @@ chmod +x "$ROOT/install.sh"
 PKG_LIST=$(cd "$ROOT/ipk" && ls *.ipk | sed 's/\.ipk$//' | tr '\n' ',' | sed 's/,$//')
 cat > "$ROOT/manifest" <<EOF
 bundle_format=1
+version=$VER
 build=$BUILD
 commit=$COMMIT
 kernel=$KREL
@@ -81,6 +87,6 @@ tar -czf "$TGZ" -C "$STAGE" "$NAME"
 
 SIZE=$(du -h "$TGZ" | cut -f1)
 echo "[bundle] 整合包：$TGZ  ($SIZE)"
-echo "[bundle]   内核=$KREL  构建号=$BUILD  commit=$COMMIT  包数=${#IPKS[@]}"
+echo "[bundle]   版本=$VER  构建号=$BUILD  内核=$KREL  commit=$COMMIT  包数=${#IPKS[@]}"
 echo "[bundle]   内容："
 tar -tzf "$TGZ" | sed 's/^/      /'

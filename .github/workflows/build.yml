@@ -100,8 +100,8 @@ jobs:
           cp -v "$BIN"/*be72*.manifest out/ 2>/dev/null || true
           cp -v "$BIN"/sha256sums out/ 2>/dev/null || true
 
-          # ---- 可增量安装的包（免刷机升级用）----
-          # 这些改动用 scripts/router-upgrade.sh 在路由器上 opkg 装即可，不必刷整机：
+          # ---- 整合包的原料（下面 Build ipk bundle 会打成一个 tar.gz；不单独发布）----
+          # 这些改动用整合包在路由器上装即可，不必刷整机：
           #   fwxd              接口 / rule_manager.lua / 两个 uci 配置 / 特征库
           #   fwx.ko            DPI 内核模块（要求内核版本与本次构建一致）
           #   luci-app-fwx-*    17 个页面（含 l10n）
@@ -115,16 +115,20 @@ jobs:
             find "$PKGROOT" "$BIN/kmods" -maxdepth 3 -name "$pat" \
               -exec cp -v {} out/ipk/ \; 2>/dev/null || true
           done
-          cp -v "$GITHUB_WORKSPACE/scripts/router-upgrade.sh" out/ipk/ 2>/dev/null || true
-          echo "---- out/ipk ----"
+          echo "---- out/ipk（只用于打整合包，不单独发布）----"
           ls -lh out/ipk || true
           echo "---- out ----"
           ls -lh out || true
+
+      - name: Read version
+        id: ver
+        run: echo "version=$(head -1 VERSION | tr -d ' \r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Build ipk bundle
         if: always()
         run: |
           # 把上面收集的 ipk 打成一个整合包：路由器上 wget + sh 一条命令装完
+          # 包名带版本号：be72pro-fwx-pkg-<版本>-b<构建号>.tar.gz
           bash scripts/make_bundle.sh out/ipk out "${{ github.run_number }}" \
             "$WORKDIR/MT798X-6.6-24.10" || echo "[warn] 整合包生成失败（不影响固件产物）"
           # 在线升级器本身也一起发（只需装到路由器一次）
@@ -140,7 +144,6 @@ jobs:
             out/*.bin
             out/*.manifest
             out/sha256sums
-            out/ipk/*
             out/*.tar.gz
             out/*.tar.gz.sha256
             out/fwx-update.sh
@@ -161,11 +164,13 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "BE72Pro+fwx #${{ github.run_number }}"
+          tag_name: v${{ steps.ver.outputs.version }}-b${{ github.run_number }}
+          name: "BE72Pro fwx v${{ steps.ver.outputs.version }} (build ${{ github.run_number }})"
           prerelease: true
           body: |
             Ruijie RG-BE72 Pro · immortalwrt-mt798x 6.6 + FanchmWrt fwx
+
+            **版本 v${{ steps.ver.outputs.version }}（构建 ${{ github.run_number }}）**
 
             - 基础固件：RuijieNetworksCommunity/MT798X-6.6-24.10 @ 401e2ba
             - fwx 来源：fanchmwrt **24.10.4** @ 9640f14 / fanchmwrt-packages @ 3c6ae71（与 fwxd 同期）
@@ -188,17 +193,12 @@ jobs:
             fwx-update            # 下载+校验+安装
             ```
 
-            **免刷机升级 · 散装 ipk**：
-            ```
-            scp -r ipk/ root@路由器:/tmp/ipk
-            ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh'
-            ```
-            整合包与本机固件必须是同一次构建产出（会校验内核版本，不匹配会拒绝安装）。
+            整合包与本机固件必须是同一次构建产出（安装器会校验目标内核版本，不匹配直接拒绝）。
+            装完可用 `cat /etc/fwx_pkg_version` 确认当前组件版本。
           files: |
             out/*.bin
             out/*.manifest
             out/sha256sums
-            out/ipk/*
             out/*.tar.gz
             out/*.tar.gz.sha256
             out/fwx-update.sh
