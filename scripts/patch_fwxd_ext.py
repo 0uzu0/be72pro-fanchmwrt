@@ -44,7 +44,8 @@ MK_REL = FWXD_REL + "/Makefile"
 MK_TOP_REL = FWXD_TOP_REL + "/Makefile"
 
 NEW_FILES = ["fwx_firewall.c", "fwx_firewall.h", "fwx_ext_compat.c",
-             "mac_blacklist.config"]  # named section base，key 与 25.12 一致
+             "mac_blacklist.config",   # named section base，key 与 25.12 一致
+             "feature.cfg"]            # v26.4.10 社区特征库（305 条，去重清洗版）
 
 # 分派表前的声明（fwx_ubus.c 里这些函数没有定义，只有声明后才不会被
 # -Werror=implicit-function-declaration 判死）。注意：fwx_ext_record_whitelisted
@@ -151,8 +152,9 @@ def main():
     # ---------- 1. 拷新文件 ----------
     for name in NEW_FILES:
         src = os.path.join(SRC_DIR, name)
-        if name == "mac_blacklist.config":
-            # 安装文件进 files/（顶层 Makefile 会 INSTALL 它）
+        if name.endswith(".config") or name.endswith(".cfg"):
+            # mac_blacklist.config 进 files/（顶层 Makefile INSTALL）；
+            # feature.cfg 进 files/（fwxd 包的 $(CP) ./files/*.cfg 通配安装）
             dst = os.path.join(tree, FWXD_TOP_REL, "files", name)
         else:
             dst = os.path.join(src_dir, name)
