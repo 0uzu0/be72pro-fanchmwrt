@@ -138,6 +138,29 @@ mkdir -p "$RJ/package/kernel/fullconenat-nft"
 cp -r "$ROOT/patches/fullconenat-nft/." "$RJ/package/kernel/fullconenat-nft/"
 echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
 
+# 2a-1. 摘掉 kmod-oaf —— 它会和 fwx.ko 死磕
+#   oaf.ko（OpenAppFilter 5.3.3）与 fwx.ko 共用同一个 netlink id 29
+#   （fwx.h 里 FWX_NETLINK_ID 与 OAF_NETLINK_ID 都是 29，fwx 本就是 oaf 的替代实现），
+#   还抢同样的 /proc/net/af_conn 与 /proc/net/af_client 节点。
+#   两个都装进镜像时，先加载的占位、后加载的初始化失败。实测（build-30 日志）：
+#       proc_dir_entry 'net/af_conn' already registered
+#       netlink_fwx_init 1897 init fwx netlink failed, id=29
+#       fwxd[5272]: Command failed: Not found
+#   → fwxd 拿不到内核 netlink，DPI / 审计 / 黑名单 / 流量统计全部静默失效。
+#   CONFIG_ALL_KMODS=y 会把树里所有 kmod 都选上（包括 oaf），所以不能只改 .config，
+#   要直接摘掉包源码，defconfig 就无法再把它选回来。
+oaf_hit=0
+for mk in $(find package -maxdepth 4 -name Makefile 2>/dev/null); do
+	if grep -qE '^PKG_NAME *:?= *"?(kmod-)?(lib)?oaf"?' "$mk" 2>/dev/null \
+		&& grep -q 'oaf' "$mk" 2>/dev/null; then
+		d=$(dirname "$mk")
+		rm -rf "$d"
+		echo "  [+] 移除 $d（kmod-oaf 与 fwx.ko 争 netlink id 29 / proc 节点）"
+		oaf_hit=1
+	fi
+done
+[ "$oaf_hit" = "1" ] || echo "  [i] 没找到 oaf 包源码（若镜像里仍有 oaf.ko，说明来源变了，需复查）"
+
 # 2b. 给 fwxd 补 24.10.4 缺的两个接口（必须在下面的接口自检之前跑，
 #     否则自检会把「补丁才提供的 api」误报成缺口）：
 #       get/set_firewall      —— 防火墙页（FullCone + 基础策略）
@@ -434,6 +457,12 @@ need_installed kmod-rtl8372n_dsa "RTL8372N DSA 驱动，-dsa-mod 变体"
 need_installed kmod-nft-fullcone "fw4 的 FullCone 表达式（防火墙页开关真正生效的前提）"
 if [ "$WITH_KMOD" = "1" ]; then
 	need_installed kmod-fwx "DPI 内核模块"
+	# kmod-oaf 绝不能和 kmod-fwx 同框：两者抢 netlink id 29 与 /proc/net/af_* 节点，
+# 先加载的占位、后加载的 fwx 初始化失败 → fwxd 所有功能静默失效（见 2a-1 注释）。
+	if grep -qE "^Installing kmod-oaf \(" "$WORKDIR/build.log"; then
+		echo "  [x] kmod-oaf 被装进了镜像 —— 会和 fwx.ko 冲突，fwx 会初始化失败"
+		VERIFY_MISSING+=("kmod-oaf-冲突")
+	fi
 fi
 
 if [ ${#VERIFY_MISSING[@]} -gt 0 ]; then

@@ -437,6 +437,14 @@ v3 还处理了两件容易漏的事：
 | `scripts/check_c_sanity.py` | 扩展源码机械审查：调用早于定义/声明、宏或标识符未定义、花括号不平衡 —— 这三类是 `-Werror` 判死的，也是 build-23 / build-26 两次失败的真凶（各白跑 80 分钟）。**这一项失败会直接中止构建** |
 | `scripts/patch_fwxd_ext.py` 自校验 | 15 个接口在分派表中、过滤就位、两个 uci 配置文件已安装、特征库 300+ 条 |
 
+**`kmod-oaf` 必须排除**：`oaf.ko`（OpenAppFilter 5.3.3）与 `fwx.ko` 共用 netlink id 29
+（`fwx.h` 里 `FWX_NETLINK_ID` 与 `OAF_NETLINK_ID` 都是 29，fwx 本就是它的替代实现），
+还抢同样的 `/proc/net/af_conn`、`/proc/net/af_client`。两个同时入镜像时，先加载的占位、
+后加载的初始化失败。实测日志：`proc_dir_entry 'net/af_conn' already registered` +
+`netlink_fwx_init ... failed, id=29` → fwxd 拿不到内核通道，DPI/审计/黑名单/流量统计
+全部静默失效。`CONFIG_ALL_KMODS=y` 会把树里所有 kmod 都选上（包括 oaf），所以
+`build.sh` 在 defconfig 之前直接摘掉该包源码，并在 7b 校验里断言它不在镜像中。
+
 ## 四、构建失败时的降级开关
 
 `fwx.ko` 要打一个改动 `struct nf_conn` 的内核补丁，6.6 上存在失败可能。仓库已做两层兜底：
