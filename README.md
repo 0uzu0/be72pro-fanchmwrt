@@ -252,7 +252,26 @@ PPPoE 自然拨不上。这一个问题就解释了「刷完拨号失败」的�
   并连带把内核 `CONFIG_SWCONFIG` 从 `n` 变成 `m`。这一步会让内核重新配置一次，
   首次构建时间会变长，属正常。
 
-## 三之三、UI 样式：按官网截图逐项校准
+## 三之三、UI 样式：两层覆盖，按官网截图逐项校准
+
+设计稿（`docs/ui-redesign.html`）落到固件里是**两层 CSS**，追加在主题 `cascade.css` 末尾：
+
+| 层 | 打在哪 | 覆盖对象 |
+|---|---|---|
+| 第一层 | LuCI 标准 DOM | `.cbi-map` / `.cbi-section` / `.cbi-button` / `.cbi-section-table` / `.nav` / `.main-layout` —— 系统设置类页面 |
+| 第二层 | fwx 自有页面 | `.fwx-form-card` / `.dash .card` / `.tab-body` / `.modal-content` / `.pc-rule-row` / 表格 `th,td` / 输入框 / 开关 / 按钮 —— 17 个 `luci-app-fwx-*` 页面 |
+
+**为什么需要第二层**：fwx 页面不是 LuCI 的 CBI，而是自带 `<style>` 块 + 共用
+`luci-static/resources/css/common.css` 的自定义模板，颜色写死（`#333` / `green` /
+`#2885e8`）、圆角 3–8px、还有渐变和阴影。只做第一层时，这些页面完全不跟着变
+（"套了设计层但界面没动"就是这个原因）。第二层按页面真实根容器提高选择器权重，
+优先于页面 `<style>` 的单类规则，因此不依赖 `!important` 也能覆盖。
+
+色板只用主题变量（`--background-color-high/medium/low`、`--text-color-*`、
+`--border-color*`、`--primary-color-*`），深浅色自动跟随。卡片 16px 圆角、
+控件 9px 圆角、过渡 120–180ms、不用重阴影。
+
+## 三之三附、UI 样式：按官网截图逐项校准
 
 依据来自两处硬证据，不再凭印象配色：
 

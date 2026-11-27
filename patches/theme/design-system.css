@@ -305,3 +305,260 @@ textarea:focus {
 	.cbi-map, .cbi-section { border-radius: 12px; }
 	.cbi-btn-row, .cbi-page-actions { flex-wrap: wrap; }
 }
+
+/* ==========================================================================
+ * 第二层：fwx 自有页面（17 个）
+ *
+ * 为什么需要这一层：fwx 的页面不是 LuCI 的 CBI，而是自带 <style> 块 + 共用
+ * luci-static/resources/css/common.css 的自定义模板，颜色写死（#333 / green /
+ * #2885e8）、圆角 3–8px、还有渐变和阴影。上面那层只覆盖 LuCI 标准 DOM
+ * （.cbi-* / .nav），打不到这些类，所以"套了设计层但页面没变"。
+ *
+ * 这里按页面真实根容器提权重（.fwx-form-card / .dash / .user-status-content /
+ * .cbi-map / .feature-container / .whitelist-section / .modal-content），
+ * 选择器权重高于页面 <style> 里的单类规则，因此不依赖 !important 也能覆盖；
+ * 只有页面写在 style="" 上的内联属性（内联非 !important 会被样式表的
+ * !important 压过）才用 !important。
+ *
+ * 设计约束（与 docs/ui-redesign.html 一致）：
+ *   卡片 16px 圆角 / 控件 9px 圆角 / 过渡 120–180ms / 不用重阴影 /
+ *   强调色只给主操作与激活态 / 全部取主题变量，深浅色自动跟随。
+ * ========================================================================== */
+
+/* ---------- 1. 卡片容器 ---------- */
+.fwx-form-card,
+.dash .card,
+.whitelist-section,
+.feature-container {
+	background: var(--background-color-medium, #fff);
+	border: 1px solid var(--border-color, #e5e7eb);
+	border-radius: 16px;
+	box-shadow: none;
+	padding: 20px 24px;
+	margin-bottom: 16px;
+	transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+/* 标题 */
+.fwx-form-card .form-title,
+.dash .cardh3,
+.whitelist-section h3,
+.feature-container .feature-title {
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.5;
+	color: var(--text-color-highest, #111);
+	margin: 0 0 12px;
+	background: none;
+	padding: 0;
+	border: none;
+}
+
+/* 说明文字 */
+.fwx-form-card .form-desc,
+.form-desc {
+	font-size: 12px;
+	line-height: 1.65;
+	color: var(--text-color-medium, #6b7280);
+}
+
+/* ---------- 2. 表单行 ---------- */
+.fwx-form-card .form-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--border-color-low, #f0f1f3);
+}
+.fwx-form-card .form-row:last-child { border-bottom: none; }
+
+.fwx-form-card .form-label {
+	flex: 0 0 168px;
+	width: 168px;
+	font-size: 13px;
+	line-height: 20px;
+	color: var(--text-color-medium, #4b5563);
+	padding-top: 7px;
+}
+.fwx-form-card .form-group { flex: 1 1 auto; min-width: 0; }
+
+/* ---------- 3. 输入控件 ---------- */
+.fwx-form-card input[type="text"],
+.fwx-form-card input[type="password"],
+.fwx-form-card input[type="number"],
+.fwx-form-card select,
+.fwx-form-card textarea,
+.fwx-form-card .cbi-input-text,
+.fwx-form-card .cbi-input-select {
+	height: 34px;
+	box-sizing: border-box;
+	padding: 0 12px;
+	font-size: 13px;
+	color: var(--text-color-high, #111);
+	background: var(--background-color-high, #fff);
+	border: 1px solid var(--border-color, #d1d5db);
+	border-radius: 9px;
+	outline: none;
+	box-shadow: none;
+	transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.fwx-form-card textarea { height: auto; padding: 9px 12px; line-height: 1.6; }
+.fwx-form-card input:focus,
+.fwx-form-card select:focus,
+.fwx-form-card textarea:focus,
+.fwx-form-card .cbi-input-text:focus {
+	border-color: var(--primary-color-high, #1976d2);
+	box-shadow: 0 0 0 3px var(--primary-color-low, rgba(25, 118, 210, .18));
+}
+
+/* ---------- 4. 按钮 ---------- */
+.fwx-form-card .btn,
+.fwx-form-card .submit-button,
+.fwx-form-card .button-check,
+.modal-content .btn,
+.dash .tab-btn {
+	height: 34px;
+	line-height: 32px;
+	padding: 0 16px;
+	font-size: 13px;
+	font-weight: 500;
+	border-radius: 9px;
+	border: 1px solid transparent;
+	box-shadow: none;
+	cursor: pointer;
+	transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.fwx-form-card .submit-button,
+.modal-content .btn-primary {
+	background: var(--primary-color-high, #1976d2);
+	color: #fff;
+}
+.fwx-form-card .submit-button:hover,
+.modal-content .btn-primary:hover { background: var(--primary-color-medium, #1565c0); }
+
+.fwx-form-card .btn-secondary,
+.fwx-form-card .button-check {
+	background: var(--background-color-medium, #f3f4f6);
+	color: var(--text-color-high, #111);
+	border-color: var(--border-color, #d1d5db);
+}
+.fwx-form-card .btn-secondary:hover,
+.fwx-form-card .button-check:hover { background: var(--background-color-high, #e9ebef); }
+
+/* ---------- 5. 表格 ---------- */
+.fwx-form-card table,
+.dash table,
+.user-status-content table {
+	width: 100%;
+	border-collapse: separate;
+	border-spacing: 0;
+	font-size: 13px;
+}
+.fwx-form-card table th,
+.dash table th,
+.user-status-content table th {
+	padding: 10px 12px;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: .02em;
+	color: var(--text-color-medium, #6b7280);
+	text-align: left;
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+.fwx-form-card table td,
+.dash table td,
+.user-status-content table td {
+	padding: 12px;
+	color: var(--text-color-high, #111);
+	border: none;
+	border-bottom: 1px solid var(--border-color-low, #f0f1f3);
+	vertical-align: middle;
+}
+.fwx-form-card table tr:last-child td,
+.dash table tr:last-child td { border-bottom: none; }
+.fwx-form-card table tbody tr:hover td,
+.dash table tbody tr:hover td,
+.user-status-content table tbody tr:hover td {
+	background: var(--background-color-low, #f7f8fa);
+}
+
+/* ---------- 6. 开关 ---------- */
+.fwx-form-card .switch,
+.dash .switch { width: 40px; height: 22px; }
+.fwx-form-card .slider,
+.dash .slider { border-radius: 999px; background-color: var(--background-color-medium, #d1d5db); }
+.fwx-form-card .slider:before,
+.dash .slider:before { height: 18px; width: 18px; left: 2px; bottom: 2px; border-radius: 999px; }
+.fwx-form-card input:checked + .slider,
+.dash input:checked + .slider { background-color: var(--primary-color-high, #1976d2); }
+.fwx-form-card input:checked + .slider:before,
+.dash input:checked + .slider:before { transform: translateX(18px); }
+
+/* ---------- 7. 标签页 ---------- */
+.dash .tab-btn {
+	background: transparent;
+	color: var(--text-color-medium, #6b7280);
+	border-color: transparent;
+}
+.dash .tab-btn.active {
+	background: var(--primary-color-low, rgba(25, 118, 210, .12));
+	color: var(--primary-color-high, #1976d2);
+}
+.tab-item {
+	border-radius: 9px;
+	color: var(--text-color-medium, #6b7280);
+	transition: background-color 140ms ease, color 140ms ease;
+}
+.tab-item.active {
+	background: var(--primary-color-low, rgba(25, 118, 210, .12));
+	color: var(--primary-color-high, #1976d2);
+}
+.tab-body {
+	background: var(--background-color-medium, #fff);
+	border: 1px solid var(--border-color, #e5e7eb);
+	border-radius: 16px;
+	padding: 20px 24px;
+}
+
+/* ---------- 8. 弹窗 ---------- */
+.modal-content {
+	background: var(--background-color-medium, #fff);
+	border: 1px solid var(--border-color, #e5e7eb);
+	border-radius: 16px;
+	box-shadow: 0 12px 32px rgba(0, 0, 0, .12);
+	overflow: hidden;
+}
+.pc-rule-row {
+	display: flex;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--border-color-low, #f0f1f3);
+	font-size: 13px;
+}
+.pc-rule-row:last-child { border-bottom: none; }
+.pc-rule-label {
+	flex: 0 0 110px;
+	color: var(--text-color-medium, #6b7280);
+}
+.pc-rule-value { flex: 1 1 auto; color: var(--text-color-high, #111); }
+
+/* ---------- 9. 提示条 ---------- */
+.status-tip,
+.success-message,
+.error-msg {
+	border-radius: 9px;
+	font-size: 12px;
+	line-height: 1.6;
+	padding: 8px 12px;
+}
+.status-tip { background: var(--background-color-medium, #f3f4f6); color: var(--text-color-medium, #4b5563); }
+.success-message { background: var(--success-color-low, #e8f5e9); color: var(--success-color-high, #1b5e20); }
+
+/* ---------- 10. 窄屏 ---------- */
+@media (max-width: 720px) {
+	.fwx-form-card, .dash .card, .tab-body { padding: 16px; border-radius: 12px; }
+	.fwx-form-card .form-row { flex-direction: column; gap: 6px; }
+	.fwx-form-card .form-label { flex: none; width: auto; padding-top: 0; }
+}
