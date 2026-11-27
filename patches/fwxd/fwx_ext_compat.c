@@ -44,6 +44,11 @@ extern const char *get_client_data_base_dir(void);
 /* fwx_config.c 的应用名表（fwx_user.h 不含此声明） */
 extern char *get_app_name_by_id(int id);
 
+/* ---- 前向声明：部分接口按文件顺序定义在后部，而调用点在前部 ---- */
+static int ext_mbl_hit(const char *mac);
+static void ext_collect_macfilter_rules(struct json_object *arr, const char *norm,
+                                        int *matched);
+
 #ifndef EXT_SECONDS_PER_DAY
 #define EXT_SECONDS_PER_DAY 86400
 #endif
@@ -1165,6 +1170,21 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
     json_object_object_add(data_obj, "list", list_obj);
     return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
 }
+/* ------------------------------------------------------- 设备黑名单（mac-blacklist 页） */
+
+/*
+ * luci-app-fwx-mac-blacklist 的三个接口（get/add/del_mac_blacklist）。
+ * 25.12 的实现就是纯 uci：mac_blacklist.base.mac_list（named section，
+ * 由包自带的 mac_blacklist.config 提供），保存后 touch
+ * /tmp/macfilter_rules_state 触发规则重载 —— 无内核改动。
+ * 生效：rule_manager.lua 每周期把黑名单作为内核规则 102 下发（命中断网）。
+ */
+#define EXT_MBL_UCI_KEY "mac_blacklist.base.mac_list"
+#define EXT_MBL_STATE "/tmp/macfilter_rules_state"
+#ifndef EXT_MBL_MAX
+#define EXT_MBL_MAX 128
+#endif
+
 static int ext_mbl_load(char macs[][EXT_MAC_LEN], int max)
 {
     struct uci_context *ctx = uci_alloc_context();
