@@ -13,6 +13,11 @@ on:
         type: choice
         options: ['yes', 'no']
         default: 'yes'
+      all_kmods:
+        description: '编译树里全部内核模块（设 no 显著加快构建，代价是冷门 kmod 不进包）'
+        type: choice
+        options: ['yes', 'no']
+        default: 'yes'
   push:
     branches: [main]
     paths:
@@ -78,6 +83,7 @@ jobs:
         env:
           WITH_KMOD: ${{ github.event.inputs.with_kmod == 'no' && '0' || '1' }}
           STYLE_CARDS: ${{ github.event.inputs.style_cards == 'no' && '0' || '1' }}
+          ALL_KMODS: ${{ github.event.inputs.all_kmods == 'no' && '0' || '1' }}
           JOBS: 4
         run: |
           chmod +x scripts/build.sh
@@ -86,12 +92,33 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          mkdir -p out
+          mkdir -p out/ipk
           BIN="$WORKDIR/MT798X-6.6-24.10/bin/targets/mediatek/filogic"
+          PKGROOT="$WORKDIR/MT798X-6.6-24.10/bin/packages"
           cp -v "$BIN"/*be72*sysupgrade.bin out/ 2>/dev/null || true
           # 包清单：排查「某个功能没编进去」时最直接的依据（ppp / kmod-* / luci-mod-*）
           cp -v "$BIN"/*be72*.manifest out/ 2>/dev/null || true
           cp -v "$BIN"/sha256sums out/ 2>/dev/null || true
+
+          # ---- 可增量安装的包（免刷机升级用）----
+          # 这些改动用 scripts/router-upgrade.sh 在路由器上 opkg 装即可，不必刷整机：
+          #   fwxd              接口 / rule_manager.lua / 两个 uci 配置 / 特征库
+          #   fwx.ko            DPI 内核模块（要求内核版本与本次构建一致）
+          #   luci-app-fwx-*    17 个页面（含 l10n）
+          #   luci-theme       设计系统样式层
+          # 树内包的 ipk 落在 bin/packages/<arch>/base/，内核模块在 bin/targets/.../kmods/；
+          # 这里用 find 兜底，避免 feed 目录名变化导致漏拷。
+          for pat in 'fwxd_*.ipk' 'libfwx_common_*.ipk' \
+                     'kmod-fwx_*.ipk' 'kmod-nft-fullcone_*.ipk' \
+                     'luci-app-fwx-*_*.ipk' 'luci-i18n-fwx-*_*.ipk' \
+                     'luci-theme-fanchmwrt_*.ipk'; do
+            find "$PKGROOT" "$BIN/kmods" -maxdepth 3 -name "$pat" \
+              -exec cp -v {} out/ipk/ \; 2>/dev/null || true
+          done
+          cp -v "$GITHUB_WORKSPACE/scripts/router-upgrade.sh" out/ipk/ 2>/dev/null || true
+          echo "---- out/ipk ----"
+          ls -lh out/ipk || true
+          echo "---- out ----"
           ls -lh out || true
 
       - name: Upload firmware
@@ -99,7 +126,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: be72pro-fwx-${{ github.run_number }}
-          path: out/*
+          path: |
+            out/*.bin
+            out/*.manifest
+            out/sha256sums
+            out/ipk/*
           retention-days: 30
 
       - name: Upload build log
@@ -118,7 +149,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: BE72Pro+fwx #${{ github.run_number }}
+          name: "BE72Pro+fwx #${{ github.run_number }}"
           prerelease: true
           body: |
             Ruijie RG-BE72 Pro · immortalwrt-mt798x 6.6 + FanchmWrt fwx
@@ -127,6 +158,18 @@ jobs:
             - fwx 来源：fanchmwrt **24.10.4** @ 9640f14 / fanchmwrt-packages @ 3c6ae71（与 fwxd 同期）
             - 内核补丁：上游 980（nf_conn 字段）；981 经核实是死代码，未使用
             - 内核模块：${{ github.event.inputs.with_kmod == 'no' && '未编译（降级版）' || '已编译' }}
+            - 全部内核模块：${{ github.event.inputs.all_kmods == 'no' && '否（构建提速版，冷门 kmod 不进包）' || '是' }}
 
-            刷机：`sysupgrade -n <文件>`（必须是 232.5 MiB 布局；stock 112.5M 布局不要刷）
-          files: out/*
+            **刷整机**（内核/DTS/底座变化时必须）：`sysupgrade -n <sysupgrade.bin>`（232.5 MiB 布局）
+
+            **免刷机升级**（接口/页面/样式/特征库/fwx.ko 变化）：
+            ```
+            scp -r ipk/ root@路由器:/tmp/ipk
+            ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh'
+            ```
+            ipk 必须与本机固件同一次构建产出（opkg 会校验内核版本，不匹配会拒绝）。
+          files: |
+            out/*.bin
+            out/*.manifest
+            out/sha256sums
+            out/ipk/*

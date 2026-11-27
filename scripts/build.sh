@@ -242,6 +242,15 @@ cp -f "$ROOT/defconfig/be72-fwx.config" .config
 if [ "$WITH_KMOD" = "0" ]; then
 	sed -i 's/^CONFIG_PACKAGE_kmod-fwx=y/# CONFIG_PACKAGE_kmod-fwx is not set/' .config
 fi
+# ALL_KMODS=0：不再"编译树里所有内核模块"，只编被依赖选中的那些。
+# ALL_KMODS=y（默认）时 OpenWrt 会把整棵树的 kmod 全编一遍，是 80 分钟里
+# 仅次于工具链/内核的大头；关掉后构建明显变快、镜像更小。
+# 代价：某些"没人显式依赖但你可能要用"的 kmod 不会出现在包里 —— 所以默认仍是 y，
+# 需要提速时用 ALL_KMODS=0 显式开启，并对 manifests 做一次差异比对确认没少东西。
+if [ "${ALL_KMODS:-1}" = "0" ]; then
+	sed -i 's/^CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/' .config
+	echo "  ALL_KMODS=0：只编被选中的内核模块（构建更快，镜像更小）"
+fi
 make defconfig >/dev/null
 
 # 这些包缺任何一个都意味着「界面/后端缺一块」，属于静默功能缺失。

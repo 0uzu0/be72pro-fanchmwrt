@@ -52,9 +52,48 @@ git push -u origin main
 immortalwrt-mediatek-filogic-ruijie_rg-be72-pro-mod-squashfs-sysupgrade.bin        ← 232.5M 布局（推荐）
 immortalwrt-mediatek-filogic-ruijie_rg-be72-pro-dsa-mod-squashfs-sysupgrade.bin    ← DSA 交换机版
 sha256sums
+ipk/                                                                               ← 免刷机升级用（见下）
+  fwxd_*.ipk  libfwx_common_*.ipk  kmod-fwx_*.ipk
+  luci-app-fwx-*_*.ipk  luci-i18n-fwx-*_*.ipk  luci-theme-fanchmwrt_*.ipk
+  router-upgrade.sh
 ```
 
 文件名里的 `-mod` 表示 **232.5 MiB 分区布局**，和社区刷机教程里「分区选 232.5」对应。
+
+### 什么时候必须刷整机，什么时候不用
+
+| 改的东西 | 升级方式 |
+|---|---|
+| fwxd 接口 / `rule_manager.lua` / 两个 uci 配置 / `feature.cfg` | `ipk/` 里的 `fwxd_*.ipk`，**不用刷机** |
+| `fwx.ko`（DPI 内核模块，含锁修复） | `kmod-fwx_*.ipk`，**不用刷机**（要求内核版本与本次构建一致） |
+| LuCI 页面 / 主题样式层 | `luci-app-fwx-*` / `luci-theme-fanchmwrt`，**不用刷机** |
+| 内核补丁（980 nf_conn）、DTS、defconfig、换底座版本 | **必须刷整机** |
+
+免刷机升级（在路由器上执行，30 秒，不重启）：
+
+```sh
+scp -r ipk/ root@192.168.1.1:/tmp/ipk
+ssh root@192.168.1.1 'sh /tmp/ipk/router-upgrade.sh'
+```
+
+脚本会：停 `fwx` → （带 `kmod-fwx` 时）`rmmod fwx` → 按「库 → 主程序 → 内核模块 → 界面 → 主题」顺序
+`opkg install --force-reinstall` → 起服务 → 清 LuCI 缓存 → 打印验证结果（模块是否加载、
+`ubus` 是否应答、特征库条目数、黑名单规则日志条数）。
+
+只装某一个包也行：`ssh root@路由器 'sh /tmp/ipk/router-upgrade.sh /tmp/ipk/fwxd_*.ipk'`。
+
+**三条硬约束**：
+
+1. ipk 必须与**本机固件同一次构建**产出 —— opkg 会校验内核版本，混用会被拒绝（拒绝是保护，不是故障）
+2. 升级不动 `/etc/config`，`mac_blacklist` / `fwx_record` 等配置保留
+3. 换 `fwxd` 会让界面断 2~3 秒；换 CSS 后浏览器要硬刷新（Ctrl+F5）
+
+### 构建提速开关
+
+`workflow_dispatch` 多了 `all_kmods`：设 `no` 就不再「编译树里全部内核模块」，
+只编被依赖选中的那些 —— 这是 80 分钟里仅次于工具链/内核的大头，关掉后构建明显变短、
+镜像更小。代价是某些「没人显式依赖」的冷门 kmod 不进包，所以**默认仍是 yes**；
+要用提速版时，把它的 `*.manifest` 和默认版对比一遍，确认没少你需要的东西。
 
 ---
 
