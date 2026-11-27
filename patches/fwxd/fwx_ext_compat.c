@@ -1155,6 +1155,8 @@ static int ext_uci_mac_in_array_list(const char *package, const char *section,
                                      const char *target_norm)
 {
     struct uci_context *ctx = NULL;
+    char pkg_buf[64] = {0};
+    char sec_buf[64] = {0};
     int num = 0;
     int found = 0;
     int i;
@@ -1163,7 +1165,11 @@ static int ext_uci_mac_in_array_list(const char *package, const char *section,
     if (!ctx) {
         return 0;
     }
-    num = fwx_uci_get_list_num(ctx, package, section);
+    /* fwx_uci_get_list_num 的参数是 char *（非 const），拷一份消掉
+     * -Wdiscarded-qualifiers 警告 —— 只是签名不严谨，不改语义 */
+    snprintf(pkg_buf, sizeof(pkg_buf), "%s", package);
+    snprintf(sec_buf, sizeof(sec_buf), "%s", section);
+    num = fwx_uci_get_list_num(ctx, pkg_buf, sec_buf);
     for (i = 0; i < num && !found; i++) {
         char mac[EXT_MAC_LEN] = {0};
         char path[128] = {0};
