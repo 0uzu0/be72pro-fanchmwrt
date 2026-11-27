@@ -24,6 +24,22 @@ STAMP_FWX = "fwx_hnat_flush_mac"
 HNAT_REL = "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c"
 FWX_REL = "package/fcm/fwx/src/fwx_mac_filter.c"
 INIT_REL = "package/fcm/fwxd/files/fwx.init"
+FWX_MAIN_REL = "package/fcm/fwx/src/fwx_main.c"
+CONN_LOCK_ANCHOR = (
+    "\tspin_lock(&af_conn_lock);\n"
+    "   \tconn = af_conn_find_and_add(flow.src, flow.dst, flow.sport, flow.dport, flow.l4_protocol);\n"
+    "\tif (!conn){\n"
+    "\t\treturn NF_ACCEPT;\n"
+    "\t}\n"
+)
+CONN_LOCK_FIXED = (
+    "\tspin_lock(&af_conn_lock);\n"
+    "   \tconn = af_conn_find_and_add(flow.src, flow.dst, flow.sport, flow.dport, flow.l4_protocol);\n"
+    "\tif (!conn){\n"
+    "\t\tspin_unlock(&af_conn_lock);\n"
+    "\t\treturn NF_ACCEPT;\n"
+    "\t}\n"
+)
 
 # 建 PPE 表项的调用点（全文件唯一）
 HNAT_ANCHOR = (
@@ -235,6 +251,32 @@ def apply_fwx(root):
     return 0 if ok else 2
 
 
+def apply_connlock(root):
+    """上游 bug 修复：fwx_main.c 里 af_conn_lock 的持锁提前返回。
+
+    netfilter hook（softirq）里 kmalloc(GFP_ATOMIC) 可能失败，
+    af_conn_find_and_add 返回 NULL 时原代码带着自旋锁直接 return，
+    锁永不释放 —— 之后任何进入该路径的包都在 spin_lock 上死自旋，
+    表现为「PPPoE 拨通、公网流量涌入的瞬间整机卡死」。
+    原厂固件没有 fwx.ko 所以从不触发；这是 fanchmwrt 24.10 上游自带
+    的 bug，首次在锐捷树跑就被打出来了（build-19 起所有版本都带）。
+    锚点含原样缩进（tab + 空格混合），幂等。"""
+    path = os.path.join(root, FWX_MAIN_REL)
+    src = read(path)
+    if CONN_LOCK_FIXED in src:
+        print("  [skip] fwx_main.c 的 af_conn_lock 泄漏已修复")
+        return 0
+    if src.count(CONN_LOCK_ANCHOR) != 1:
+        print("  [!] af_conn_lock 锚点出现 %d 次（期望 1），未修改" % src.count(CONN_LOCK_ANCHOR))
+        return 2
+    src = src.replace(CONN_LOCK_ANCHOR, CONN_LOCK_FIXED, 1)
+    write(path, src)
+    chk = read(path)
+    print("  [+] fwx_main.c：af_conn_lock 持锁返回已修复" if CONN_LOCK_FIXED in chk
+          else "  [!] fwx_main.c 写入校验失败")
+    return 0 if CONN_LOCK_FIXED in chk else 2
+
+
 def apply_init(root):
     """降级版（无 fwx.ko）下别让 rule_manager 空转。"""
     path = os.path.join(root, INIT_REL)
@@ -270,6 +312,7 @@ def main():
         rc |= apply_hnat(a.hnat)
     if a.fwx:
         rc |= apply_fwx(a.fwx)
+        rc |= apply_connlock(a.fwx)
         rc |= apply_init(a.fwx)
     sys.exit(0 if rc == 0 else 2)
 
