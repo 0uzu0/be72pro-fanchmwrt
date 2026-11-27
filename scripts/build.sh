@@ -174,6 +174,8 @@ fi
 if [ "$STYLE_CARDS" = "1" ]; then
 	python3 "$ROOT/scripts/style_bridge.py" --theme "$RJ" \
 		|| warn "全站视觉统一未应用 —— 视觉仍为主题默认"
+	python3 "$ROOT/scripts/style_bridge.py" --design "$RJ" \
+		|| warn "设计系统层未应用 —— 视觉仍为旧样式（阶段一）"
 else
 	echo "  [skip] 全站视觉统一（STYLE_CARDS=0，保持 fanchmwrt 原样）"
 fi

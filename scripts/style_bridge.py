@@ -45,6 +45,13 @@ MARK = "/* === be72pro-fanchmwrt:style-bridge === */"
 FWX_CSS_REL = "package/luci-app-fwx-resources/htdocs/luci-static/resources/css/common.css"
 THEME_CSS_REL = "package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/fanchmwrt/cascade.css"
 
+# 设计系统覆盖层（阶段一视觉统一）：独立文件，构建时追加到 cascade.css 末尾。
+# 全部使用主题自身变量（--background-color-* / --primary-color-* 等），
+# 深色模式（data-darkmode）自动跟随。
+DESIGN_MARK = "be72pro-fanchmwrt:design-system"   # 判重子串（CSS 首行是块注释开头，不含 */）
+DESIGN_CSS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                          "patches", "theme", "design-system.css")
+
 # ---------------------------------------------------------------- A：fwx 页面
 # 原文件里的类名（.fwx-form-card / .form-title / .submit-button / .switch ...）
 # 保持不变，只把「颜色/边框/背景」改成变量，这样 14 个页面立刻跟随主题与深浅色。
@@ -275,6 +282,26 @@ def write(path, text):
         f.write(text.encode("utf-8", "surrogateescape"))
 
 
+def append_design(path, label):
+    """把 patches/theme/design-system.css 追加到目标 CSS（幂等，按 DESIGN_MARK 判重）。"""
+    if not os.path.isfile(path):
+        print("  [x] 找不到 %s" % path)
+        return 2
+    src = read(path)
+    if DESIGN_MARK in src:
+        print("  [skip] %s 已含设计系统层" % label)
+        return 0
+    if not os.path.isfile(DESIGN_CSS):
+        print("  [x] 仓库里缺 patches/theme/design-system.css")
+        return 2
+    with open(DESIGN_CSS, "r", encoding="utf-8") as f:
+        block = f.read()
+    write(path, src.rstrip("\n") + "\n\n" + block.strip("\n") + "\n")
+    ok = DESIGN_MARK in read(path)
+    print("  [+] %s：设计系统层已应用" % label if ok else "  [!] %s 写入校验失败" % label)
+    return 0 if ok else 2
+
+
 def append_bridge(path, block, label):
     if not os.path.isfile(path):
         print("  [!] 找不到 %s" % label)
@@ -294,18 +321,20 @@ def append_bridge(path, block, label):
 def main():
     args = sys.argv[1:]
     if not args:
-        print("usage: style_bridge.py [--fwx|--theme] <tree> ...")
+        print("usage: style_bridge.py [--fwx|--theme|--design] <tree> ...")
         return 2
     rc = 0
     tree = None
     for i, a in enumerate(args):
-        if a in ("--fwx", "--theme"):
+        if a in ("--fwx", "--theme", "--design"):
             tree = args[i + 1] if i + 1 < len(args) else None
             if not tree:
                 print("  [!] %s 缺少源码树参数" % a)
                 return 2
             if a == "--fwx":
                 rc |= append_bridge(os.path.join(tree, FWX_CSS_REL), FWX_BRIDGE, "fwx common.css")
+            elif a == "--design":
+                rc |= append_design(os.path.join(tree, THEME_CSS_REL), "主题 cascade.css")
             else:
                 rc |= append_bridge(os.path.join(tree, THEME_CSS_REL), THEME_BRIDGE, "主题 cascade.css")
     return 0 if rc == 0 else 2

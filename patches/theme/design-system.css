@@ -1,0 +1,307 @@
+/* === be72pro-fanchmwrt:design-system ===
+ *
+ * 设计系统覆盖层（阶段一：视觉统一）。
+ * 全部使用主题自身的 CSS 变量（--background-color-* / --text-color-* /
+ * --border-color-* / --primary-color-*），因此深色模式（data-darkmode）
+ * 自动跟随，无需第二套色值。
+ *
+ * 覆盖对象是 LuCI 标准 DOM：
+ *   布局   .main-layout / .top-navbar / .nav
+ *   卡片   .cbi-map / .cbi-section
+ *   表格   .cbi-section-table
+ *   控件   .cbi-button / .cbi-input-text / .cbi-select / .cbi-dropdown
+ *   标签   .cbi-tabmenu
+ *
+ * 设计稿：docs/ui-redesign.html（16px 卡片圆角 / 9px 控件圆角 / 120-180ms
+ * 过渡 / 无重阴影 / 强调色只用于主操作与激活态）。
+ */
+
+/* ---------- 基础 ---------- */
+body,
+.cbi-map,
+.cbi-section,
+.cbi-value,
+.cbi-section-table,
+.nav a,
+input,
+select,
+button,
+textarea {
+	font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
+		"HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+#maincontent {
+	padding: 20px 22px 40px;
+}
+
+#maincontent > * {
+	animation: fwx-view-in .18s cubic-bezier(.32, .72, .24, 1);
+}
+
+@keyframes fwx-view-in {
+	from { opacity: 0; transform: translateY(6px); }
+	to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#maincontent > * { animation: none; }
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+	background: var(--border-color-medium);
+	border-radius: 99px;
+	border: 3px solid transparent;
+	background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--border-color-high); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 顶栏 ---------- */
+.top-navbar {
+	min-height: 56px;
+	border-bottom: 1px solid var(--border-color-low);
+	background: var(--background-color-high);
+}
+
+/* ---------- 侧栏导航 ---------- */
+.nav > li > a,
+.nav .dropdown-menu a.menu {
+	border-radius: 9px;
+	transition: background-color .15s ease, color .15s ease;
+}
+
+.nav > li > a:hover {
+	background: var(--background-color-medium);
+}
+
+.nav .active > a {
+	background: color-mix(in srgb, var(--primary-color-high) 12%, transparent);
+	color: var(--primary-color-high) !important;
+	font-weight: 500;
+	position: relative;
+}
+
+.nav .active > a::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 3px;
+	height: 16px;
+	border-radius: 0 3px 3px 0;
+	background: var(--primary-color-high);
+}
+
+/* ---------- 卡片 ---------- */
+.cbi-map,
+.cbi-section {
+	border: 1px solid var(--border-color-low);
+	border-radius: 14px;
+	background: var(--background-color-high);
+	box-shadow: none;
+	transition: border-color .15s ease;
+}
+
+.cbi-section + .cbi-section { margin-top: 14px; }
+
+.cbi-section > h3,
+.cbi-section > legend,
+.cbi-map > h2 {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-color-medium);
+	letter-spacing: .1px;
+}
+
+/* ---------- 表格 ---------- */
+.cbi-section-table {
+	border-collapse: collapse;
+	width: 100%;
+}
+
+.cbi-section-table th {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-color-low);
+	text-align: left;
+	padding: 10px 10px;
+	border-bottom: 1px solid var(--border-color-low);
+}
+
+.cbi-section-table td {
+	padding: 11px 10px;
+	font-size: 13px;
+	color: var(--text-color-medium);
+	border-bottom: 1px solid var(--border-color-low);
+}
+
+.cbi-section-table tbody tr {
+	transition: background-color .12s ease;
+}
+
+.cbi-section-table tbody tr:hover {
+	background: var(--background-color-medium);
+}
+
+.cbi-section-table tr:last-child td { border-bottom: none; }
+
+/* ---------- 按钮 ---------- */
+.cbi-button {
+	border-radius: 9px;
+	padding: 7px 14px;
+	font-size: 13px;
+	border: 1px solid var(--border-color-medium);
+	background: transparent;
+	color: var(--text-color-high);
+	transition: background-color .15s ease, border-color .15s ease,
+		filter .15s ease, transform .08s ease;
+}
+
+.cbi-button:hover {
+	border-color: var(--border-color-high);
+	background: var(--background-color-medium);
+}
+
+.cbi-button:active { transform: translateY(1px); }
+
+.cbi-button-save,
+.cbi-button-apply,
+.cbi-button-positive {
+	background: var(--primary-color-high);
+	border-color: var(--primary-color-high);
+	color: #fff;
+	font-weight: 500;
+}
+
+.cbi-button-save:hover,
+.cbi-button-apply:hover,
+.cbi-button-positive:hover {
+	filter: brightness(1.08);
+	background: var(--primary-color-high);
+	border-color: var(--primary-color-high);
+}
+
+.cbi-button-reset,
+.cbi-button-neutral {
+	background: transparent;
+	color: var(--text-color-medium);
+}
+
+.cbi-button-negative {
+	border-color: color-mix(in srgb, var(--error-color-high, #d32f2f) 45%, transparent);
+	color: var(--error-color-high, #d32f2f);
+	background: transparent;
+}
+
+/* ---------- 输入控件 ---------- */
+.cbi-input-text,
+.cbi-input-password,
+.cbi-input-select,
+.cbi-select,
+.cbi-dropdown > ul,
+textarea {
+	border-radius: 9px;
+	border: 1px solid var(--border-color-medium);
+	background: var(--background-color-high);
+	color: var(--text-color-high);
+	padding: 6px 10px;
+	font-size: 13px;
+	transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.cbi-input-text:focus,
+.cbi-input-password:focus,
+.cbi-input-select:focus,
+.cbi-select:focus,
+textarea:focus {
+	border-color: var(--primary-color-high);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color-high) 18%, transparent);
+	outline: none;
+}
+
+.cbi-value-title {
+	color: var(--text-color-medium);
+	font-size: 13px;
+}
+
+.cbi-value-description {
+	font-size: 12px;
+	color: var(--text-color-low);
+}
+
+/* ---------- 标签页（胶囊化） ---------- */
+.cbi-tabmenu {
+	display: inline-flex;
+	gap: 4px;
+	padding: 3px;
+	border-radius: 11px;
+	background: var(--background-color-medium);
+	border: 1px solid var(--border-color-low);
+	margin-bottom: 16px;
+}
+
+.cbi-tabmenu > li {
+	border: none !important;
+	border-radius: 8px !important;
+	background: transparent;
+	margin: 0;
+	transition: background-color .15s ease;
+}
+
+.cbi-tabmenu > li > a {
+	padding: 6px 14px;
+	font-size: 12.5px;
+	color: var(--text-color-medium);
+	border-radius: 8px;
+}
+
+.cbi-tabmenu > li.cbi-tab > a,
+.cbi-tabmenu > li:not(.cbi-tab-disabled) > a {
+	color: var(--text-color-high);
+	font-weight: 500;
+	background: var(--background-color-high);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+
+.cbi-tabmenu > li.cbi-tab-disabled > a:hover {
+	background: var(--background-color-high);
+	color: var(--text-color-medium);
+}
+
+/* ---------- 开关（checkbox 视觉化） ---------- */
+.cbi-input-checkbox,
+.cbi-input-radio {
+	accent-color: var(--primary-color-high);
+	width: 16px;
+	height: 16px;
+	cursor: pointer;
+}
+
+/* ---------- 分节标题与描述 ---------- */
+.cbi-section-descr,
+.cbi-section-table-descr {
+	font-size: 12px;
+	color: var(--text-color-low);
+	line-height: 1.6;
+}
+
+/* ---------- 顶部分页动作条 ---------- */
+.cbi-page-actions {
+	border-top: 1px solid var(--border-color-low);
+	padding-top: 14px;
+	margin-top: 18px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+/* ---------- 移动端 ---------- */
+@media (max-width: 720px) {
+	#maincontent { padding: 14px 12px 32px; }
+	.cbi-map, .cbi-section { border-radius: 12px; }
+	.cbi-btn-row, .cbi-page-actions { flex-wrap: wrap; }
+}
