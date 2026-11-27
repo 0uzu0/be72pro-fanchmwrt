@@ -297,6 +297,10 @@ v3 还处理了两件容易漏的事：
 | 上网审计 › 用户白名单 | `get/add/del_record_whitelist` | **已实现且生效** | uci `fwx_record.@whitelist[0].whitelist`（key 与 25.12 一致）；生效点：① `add_user_record` 写入侧跳过（新记录不入库）② `get_user_records` 两个循环过滤（存量不显示）③ `visit_list` 过滤（访问明细不显示） |
 | 终端列表 › 详情 | `get_user_daily_summary` | **已实现** | `client_data/<mac>/stats/hourly_<date>.json`（逐小时流量/在线/活跃，`fwx_user.c` 跨天归档一直在写）+ `top_apps_<date>.json`；今天用会话记录 + `online_session` + `client->visit` 实时聚合 |
 | 终端列表 › 详情 | `get_user_parental_control_rules` | **已实现** | `macfilter.@rule[i]` 的时段规则（time 型）+ appfilter/macfilter 白名单命中标志 |
+| 终端列表 › 详情 | `get_parental_control_detail` | **已实现** | 从 uci 规则实时聚合（25.12 读缓存 JSON，那套缓存写入链路 24.10 没有——实时聚合语义一致且无时差） |
+| 终端列表 › 状态页 | `get_user_stat` 等 4 个应用记录接口 | **不做** | 对照官方 api.html 逐个验证：pin 版界面（3c6ae71）对这些接口 **0 处引用**（它们是 25.12 main 界面的接口）——做了就是无消费者的死代码；`get_app_history_records` 还依赖 25.12 特有的 SQLite client.db |
+| 终端管理 | 设备黑名单 `get/add/del_mac_blacklist` | **已实现且生效** | uci `mac_blacklist.base.mac_list`（named section 由补进的 `mac_blacklist.config` 提供）；生效链路：`rule_manager.lua` 每周期把黑名单读出、作为内核规则 102 下发（25.12 同机制，内核零改动）——之前**页面已装但后端缺失，增删无响应** |
+| 系统配置页 | `get_system_base_info` | **已实现** | `user_session_enable` 恒 0（24.10 无该 proc），`wireless_support` 不输出（24.10 无 capability 结构） |
 | 仪表板 | `get_init_status`/`set_init_status` | **已实现** | `/etc/fwx_init_status` |
 | 网络设置 › 防火墙 | `get_firewall`/`set_firewall` | **已实现** | 移植 25.12 的 `fwx_firewall.c`（只读写 `firewall.@defaults[0]`，就是 fw4 标准 uci）+ `kmod-nft-fullcone` |
 
@@ -432,6 +436,7 @@ WORKDIR=$HOME/fw-build WITH_KMOD=1 JOBS=$(nproc) bash scripts/build.sh
 | 项 | 说明 |
 |---|---|
 | 无线设置页 | 未包含 `luci-app-fwx-wireless`：它按 fanchmwrt 自家无线 schema 写配置，本机是 mt_wifi7 私有驱动（`mt7992`），配置项对不上。无线仍是 immortalwrt 原生页面（`wireless-mtk`），外观由 fanchmwrt 主题外壳统一 |
+| 特征库 | 出厂精简库仅 221 条（v22.3.24，2022 年）——全量库只在 `api.openappfilter.com` 云端，需订阅 Key（feature 页的在线更新/自定义特征两个区块的界面已存在，但 24.10.4 的 fwxd 没有这些后端 api，官方 api 文档也未收录，属于订阅商业层）。自定义特征/在线更新的后端移植待 Key 渠道确认 |
 | 网络设置 / 系统配置 / 防火墙 | **已包含** `-network` / `-system` / `-firewall`。前两个只写 `network.lan|wan` 与 `system` 的标准 uci，第三个只写 `firewall.@defaults[0]`，都不碰锐捷私有拓扑。fw4 侧自带 `nft_try_fullcone()` 运行时自检：内核模块缺失时自动降级为普通 masq 并打 warn（`nft_try_fullcone failed`），FullCone 页开关的真正生效前提是 `kmod-nft-fullcone` 已装（构建校验兜底） |
 | 侧边栏 | `menu-fanchmwrt.js` 接管整个菜单渲染，未在图标白名单里的条目回落到 `default` 图标；顺序按 LuCI 的 `menu.d` 排 |
 | fastnat | 依赖 `kmod-shortcut-fe`，与 HNAT 互斥，未包含 |

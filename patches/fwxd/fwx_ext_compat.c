@@ -1120,11 +1120,10 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
     struct json_object *list_obj = NULL;
     const char *mac = NULL;
     char norm[EXT_MAC_LEN] = {0};
-    struct uci_context *ctx = NULL;
-    int rule_num = 0;
-    int i;
-    time_t now_t = time(NULL);
-    struct tm *now_tm = localtime(&now_t);
+    int af_whitelist = 0;
+    int mf_whitelist = 0;
+    int app_matched = 0;
+    const char *status_key = "unlimited";
 
     if (!req_obj || !json_object_object_get_ex(req_obj, "mac", &mac_obj) || !mac_obj) {
         return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
@@ -1148,19 +1147,291 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
     }
 
     json_object_object_add(data_obj, "mac", json_object_new_string(norm));
-    json_object_object_add(data_obj, "af_whitelist",
-                           json_object_new_int(ext_uci_mac_in_array_list(
-                               "appfilter_whitelist", "whitelist_mac", norm)));
-    json_object_object_add(data_obj, "mf_whitelist",
-                           json_object_new_int(ext_uci_mac_in_array_list(
-                               "macfilter_whitelist", "whitelist_mac", norm)));
+    af_whitelist = ext_uci_mac_in_array_list("appfilter_whitelist", "whitelist_mac", norm);
+    mf_whitelist = ext_uci_mac_in_array_list("macfilter_whitelist", "whitelist_mac", norm);
+    json_object_object_add(data_obj, "af_whitelist", json_object_new_int(af_whitelist ? 1 : 0));
+    json_object_object_add(data_obj, "mf_whitelist", json_object_new_int(mf_whitelist ? 1 : 0));
 
-    ctx = uci_alloc_context();
-    if (!ctx) {
-        json_object_object_add(data_obj, "list", list_obj);
-        return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
+    ext_collect_macfilter_rules(list_obj, norm, &app_matched);
+
+    if (!mf_whitelist && ext_mbl_hit(norm)) {
+        status_key = "mac_blocked";
+    } else if (app_matched && !af_whitelist) {
+        status_key = "app_limited";
     }
+    json_object_object_add(data_obj, "pc_status", json_object_new_string(status_key));
+    json_object_object_add(data_obj, "pc_status_key", json_object_new_string(status_key));
 
+    json_object_object_add(data_obj, "list", list_obj);
+    return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
+}
+static int ext_mbl_load(char macs[][EXT_MAC_LEN], int max)
+{
+    struct uci_context *ctx = uci_alloc_context();
+    char buf[8192] = {0};
+    int count = 0;
+    char *p = NULL;
+    char *save = NULL;
+
+    if (!ctx) {
+        return 0;
+    }
+    if (fwx_uci_get_list_value(ctx, EXT_MBL_UCI_KEY, buf, sizeof(buf), " ") == 0 &&
+        buf[0] != '\0') {
+        for (p = strtok_r(buf, " \t", &save); p && count < max;
+             p = strtok_r(NULL, " \t", &save)) {
+            ext_norm_mac(p, macs[count], EXT_MAC_LEN);
+            if (macs[count][0] != '\0') {
+                count++;
+            }
+        }
+    }
+    uci_free_context(ctx);
+    return count;
+}
+
+static int ext_mbl_save(char macs[][EXT_MAC_LEN], int count)
+{
+    struct uci_context *ctx = uci_alloc_context();
+    int i;
+    int ret = 0;
+
+    if (!ctx) {
+        return -1;
+    }
+    fwx_uci_delete(ctx, EXT_MBL_UCI_KEY);
+    for (i = 0; i < count; i++) {
+        if (macs[i][0] != '\0') {
+            fwx_uci_add_list(ctx, EXT_MBL_UCI_KEY, macs[i]);
+        }
+    }
+    if (fwx_uci_commit(ctx, "mac_blacklist") != UCI_OK) {
+        ret = -1;
+    }
+    uci_free_context(ctx);
+    return ret;
+}
+
+static void ext_mbl_touch(void)
+{
+    FILE *fp = fopen(EXT_MBL_STATE, "a");
+    if (fp) {
+        fclose(fp);
+    }
+}
+
+static int ext_mbl_hit(const char *mac)
+{
+    char macs[EXT_MBL_MAX][EXT_MAC_LEN] = {{0}};
+    int count = ext_mbl_load(macs, EXT_MBL_MAX);
+    int i;
+
+    for (i = 0; i < count; i++) {
+        if (strcmp(macs[i], mac) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ext_mbl_append_item(struct json_object *arr, const char *mac)
+{
+    struct json_object *item_obj = json_object_new_object();
+    client_node_t *dev = ext_client_by_mac(mac);
+
+    if (!item_obj) {
+        return;
+    }
+    json_object_object_add(item_obj, "mac", json_object_new_string(mac));
+    if (dev) {
+        json_object_object_add(item_obj, "hostname",
+                               json_object_new_string(dev->hostname ? dev->hostname : "--"));
+        json_object_object_add(item_obj, "nickname",
+                               json_object_new_string(dev->nickname ? dev->nickname : "--"));
+    } else {
+        json_object_object_add(item_obj, "hostname", json_object_new_string("--"));
+        json_object_object_add(item_obj, "nickname", json_object_new_string("--"));
+    }
+    json_object_array_add(arr, item_obj);
+}
+
+struct json_object *fwx_api_get_mac_blacklist(struct json_object *req_obj)
+{
+    char macs[EXT_MBL_MAX][EXT_MAC_LEN] = {{0}};
+    int count = ext_mbl_load(macs, EXT_MBL_MAX);
+    struct json_object *data_obj = json_object_new_object();
+    struct json_object *list_obj = json_object_new_array();
+    int i;
+
+    (void)req_obj;
+    if (!data_obj || !list_obj) {
+        if (data_obj) {
+            json_object_put(data_obj);
+        }
+        if (list_obj) {
+            json_object_put(list_obj);
+        }
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    for (i = 0; i < count; i++) {
+        ext_mbl_append_item(list_obj, macs[i]);
+    }
+    json_object_object_add(data_obj, "list", list_obj);
+    return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
+}
+
+struct json_object *fwx_api_add_mac_blacklist(struct json_object *req_obj)
+{
+    char macs[EXT_MBL_MAX][EXT_MAC_LEN] = {{0}};
+    int count = ext_mbl_load(macs, EXT_MBL_MAX);
+    struct json_object *mac_obj = NULL;
+    struct json_object *mac_list_obj = NULL;
+    int valid_count = 0;
+    int i;
+
+    if (!req_obj) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    mac_obj = json_object_object_get(req_obj, "mac");
+    if (mac_obj) {
+        const char *raw = json_object_get_string(mac_obj);
+        char norm[EXT_MAC_LEN] = {0};
+        ext_norm_mac(raw ? raw : "", norm, sizeof(norm));
+        if (norm[0] != '\0') {
+            int dup = 0;
+            int j;
+            for (j = 0; j < count; j++) {
+                if (strcmp(macs[j], norm) == 0) {
+                    dup = 1;
+                    break;
+                }
+            }
+            if (!dup && count < EXT_MBL_MAX) {
+                snprintf(macs[count], EXT_MAC_LEN, "%s", norm);
+                count++;
+            }
+            valid_count++;
+        }
+    }
+    if (json_object_object_get_ex(req_obj, "mac_list", &mac_list_obj) &&
+        json_object_is_type(mac_list_obj, json_type_array)) {
+        int len = json_object_array_length(mac_list_obj);
+        for (i = 0; i < len; i++) {
+            struct json_object *item = json_object_array_get_idx(mac_list_obj, i);
+            const char *raw = item ? json_object_get_string(item) : NULL;
+            char norm[EXT_MAC_LEN] = {0};
+            int dup = 0;
+            int j;
+
+            if (!raw || raw[0] == '\0') {
+                continue;
+            }
+            ext_norm_mac(raw, norm, sizeof(norm));
+            if (norm[0] == '\0') {
+                continue;
+            }
+            valid_count++;
+            for (j = 0; j < count; j++) {
+                if (strcmp(macs[j], norm) == 0) {
+                    dup = 1;
+                    break;
+                }
+            }
+            if (!dup && count < EXT_MBL_MAX) {
+                snprintf(macs[count], EXT_MAC_LEN, "%s", norm);
+                count++;
+            }
+        }
+    }
+    if (valid_count == 0) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    if (ext_mbl_save(macs, count) != 0) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    ext_mbl_touch();
+    return fwx_gen_api_response_data(API_CODE_SUCCESS, NULL);
+}
+
+struct json_object *fwx_api_del_mac_blacklist(struct json_object *req_obj)
+{
+    char macs[EXT_MBL_MAX][EXT_MAC_LEN] = {{0}};
+    int count = ext_mbl_load(macs, EXT_MBL_MAX);
+    struct json_object *mac_obj = NULL;
+    const char *raw = NULL;
+    char norm[EXT_MAC_LEN] = {0};
+    int keep = 0;
+    int i;
+
+    if (!req_obj ||
+        !json_object_object_get_ex(req_obj, "mac", &mac_obj)) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    raw = json_object_get_string(mac_obj);
+    ext_norm_mac(raw ? raw : "", norm, sizeof(norm));
+    if (norm[0] == '\0') {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    for (i = 0; i < count; i++) {
+        if (strcmp(macs[i], norm) == 0) {
+            continue; /* 丢弃被删除的项 */
+        }
+        if (keep != i) {
+            memcpy(macs[keep], macs[i], EXT_MAC_LEN);
+        }
+        keep++;
+    }
+    if (ext_mbl_save(macs, keep) != 0) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    ext_mbl_touch();
+    return fwx_gen_api_response_data(API_CODE_SUCCESS, NULL);
+}
+
+/* ------------------------------------------------------- 系统基础信息 */
+
+/*
+ * get_system_base_info —— 仪表板配置页调用。
+ * 24.10 没有 user_session proc（fwx_user_session），恒 0；
+ * wireless_support 依赖 g_fwx_capability（24.10 无此结构），不输出。
+ */
+struct json_object *fwx_api_get_system_base_info(struct json_object *req_obj)
+{
+    struct json_object *data_obj = json_object_new_object();
+
+    (void)req_obj;
+    if (!data_obj) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    json_object_object_add(data_obj, "user_session_enable", json_object_new_int(0));
+    return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
+}
+
+/* ------------------------------------------------------- 家长控制详情 */
+
+/*
+ * get_parental_control_detail —— user_status.htm 的 showParentalControlDetail：
+ *   data: { pc_status, pc_status_key, af_whitelist, mf_whitelist,
+ *           appfilter_rules: [{rule_id, rule_name, mode, app_list, start_time, end_time}],
+ *           macfilter_rules: [{rule_id, rule_name, mode, match_type, start_time, end_time}] }
+ * pc_status 三态：mac_blocked（命中黑名单）/ app_limited（命中应用过滤规则）/ unlimited。
+ * 25.12 的版本从家长控制缓存 JSON 读；24.10 没有那套缓存，这里直接从
+ * uci 规则实时聚合，语义一致、无缓存时差。
+ */
+/* macfilter 规则聚合（time 规则 + 黑名单条目），parental rules/detail 两个接口共用。
+ * match_type: time_range（命中时段规则）/ blacklist（命中设备黑名单）。 */
+static void ext_collect_macfilter_rules(struct json_object *arr, const char *norm,
+                                        int *matched)
+{
+    struct uci_context *ctx = uci_alloc_context();
+    int rule_num = 0;
+    int i;
+    time_t now_t = time(NULL);
+    struct tm *now_tm = localtime(&now_t);
+
+    if (!ctx) {
+        return;
+    }
     rule_num = fwx_uci_get_list_num(ctx, "macfilter", "rule");
     for (i = 0; i < rule_num; i++) {
         char path[128] = {0};
@@ -1170,7 +1441,6 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
         char enabled_str[16] = {0};
         char time_buf[1024] = {0};
         struct json_object *rule_obj = NULL;
-        struct json_object *cond_obj = NULL;
         struct json_object *time_array = NULL;
         int enabled = 1;
         int effective_today = 0;
@@ -1193,14 +1463,10 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
         }
 
         rule_obj = json_object_new_object();
-        cond_obj = json_object_new_object();
         time_array = json_object_new_array();
-        if (!rule_obj || !cond_obj || !time_array) {
+        if (!rule_obj || !time_array) {
             if (rule_obj) {
                 json_object_put(rule_obj);
-            }
-            if (cond_obj) {
-                json_object_put(cond_obj);
             }
             if (time_array) {
                 json_object_put(time_array);
@@ -1211,10 +1477,8 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
         json_object_object_add(rule_obj, "module", json_object_new_string("macfilter"));
         json_object_object_add(rule_obj, "rule_id", json_object_new_int(atoi(id_str)));
         json_object_object_add(rule_obj, "rule_name", json_object_new_string(name_str));
-        json_object_object_add(rule_obj, "condition_type", json_object_new_string("time"));
+        json_object_object_add(rule_obj, "match_type", json_object_new_string("time_range"));
 
-        /* time_rule 元素格式（与 fwx_api_get_mac_filter_rules 的解析一致）：
-         * "weekdays,HH:MM,HH:MM"，周几与时间用逗号混排在同一段 */
         snprintf(path, sizeof(path), "macfilter.@rule[%d].time_rule", i);
         if (fwx_uci_get_list_value(ctx, path, time_buf, sizeof(time_buf), " ") == 0 &&
             time_buf[0] != '\0') {
@@ -1290,8 +1554,9 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
             }
         }
 
-        json_object_object_add(cond_obj, "time_rules", time_array);
-        json_object_object_add(rule_obj, "condition", cond_obj);
+        json_object_object_add(rule_obj, "time_rules", time_array);
+        json_object_object_add(rule_obj, "start_time", json_object_new_string(""));
+        json_object_object_add(rule_obj, "end_time", json_object_new_string(""));
         {
             struct json_object *status_obj = json_object_new_object();
             if (status_obj) {
@@ -1301,10 +1566,199 @@ struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *
                 json_object_object_add(rule_obj, "today_status", status_obj);
             }
         }
-        json_object_array_add(list_obj, rule_obj);
+        json_object_array_add(arr, rule_obj);
+        *matched = 1;
     }
     uci_free_context(ctx);
 
-    json_object_object_add(data_obj, "list", list_obj);
+    /* 黑名单条目：命中设备黑名单时补一条 match_type=blacklist（id 用 0，排在最前） */
+    if (ext_mbl_hit(norm)) {
+        struct json_object *rule_obj = json_object_new_object();
+        if (rule_obj) {
+            json_object_object_add(rule_obj, "module", json_object_new_string("macfilter"));
+            json_object_object_add(rule_obj, "rule_id", json_object_new_int(0));
+            json_object_object_add(rule_obj, "rule_name", json_object_new_string("Blacklist"));
+            json_object_object_add(rule_obj, "mode", json_object_new_int(1));
+            json_object_object_add(rule_obj, "match_type", json_object_new_string("blacklist"));
+            json_object_object_add(rule_obj, "start_time", json_object_new_string(""));
+            json_object_object_add(rule_obj, "end_time", json_object_new_string(""));
+            json_object_array_add(arr, rule_obj);
+            *matched = 1;
+        }
+    }
+}
+
+static void ext_detail_appfilter_rules(struct json_object *arr, const char *norm,
+                                       int *matched)
+{
+    struct uci_context *ctx = uci_alloc_context();
+    int rule_num = 0;
+    int i;
+
+    if (!ctx) {
+        return;
+    }
+    rule_num = fwx_uci_get_list_num(ctx, "appfilter", "rule");
+    for (i = 0; i < rule_num; i++) {
+        char path[128] = {0};
+        char id_str[32] = {0};
+        char name_str[128] = {0};
+        char mac_str[EXT_MAC_LEN] = {0};
+        char enabled_str[16] = {0};
+        int enabled = 1;
+        struct json_object *rule_obj = NULL;
+        struct json_object *app_list = NULL;
+        int app_count = 0;
+        int k;
+
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].id", i);
+        if (fwx_uci_get_value(ctx, path, id_str, sizeof(id_str)) != 0) {
+            continue;
+        }
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].name", i);
+        fwx_uci_get_value(ctx, path, name_str, sizeof(name_str));
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].user_mac", i);
+        fwx_uci_get_value(ctx, path, mac_str, sizeof(mac_str));
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].enabled", i);
+        if (fwx_uci_get_value(ctx, path, enabled_str, sizeof(enabled_str)) == 0) {
+            enabled = atoi(enabled_str);
+        }
+
+        if (!enabled || !ext_mac_equal(mac_str, norm)) {
+            continue;
+        }
+
+        rule_obj = json_object_new_object();
+        app_list = json_object_new_array();
+        if (!rule_obj || !app_list) {
+            if (rule_obj) {
+                json_object_put(rule_obj);
+            }
+            if (app_list) {
+                json_object_put(app_list);
+            }
+            continue;
+        }
+        json_object_object_add(rule_obj, "rule_id", json_object_new_int(atoi(id_str)));
+        json_object_object_add(rule_obj, "rule_name", json_object_new_string(name_str));
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].mode", i);
+        {
+            char mode_str[16] = {0};
+            fwx_uci_get_value(ctx, path, mode_str, sizeof(mode_str));
+            json_object_object_add(rule_obj, "mode", json_object_new_int(atoi(mode_str)));
+        }
+        json_object_object_add(rule_obj, "start_time", json_object_new_string(""));
+        json_object_object_add(rule_obj, "end_time", json_object_new_string(""));
+
+        /* 命中的应用清单：appfilter.@rule[i].apps（list，偶发单值 option 都兼容） */
+        snprintf(path, sizeof(path), "appfilter.@rule[%d].apps", i);
+        {
+            char apps_buf[1024] = {0};
+            if (fwx_uci_get_list_value(ctx, path, apps_buf, sizeof(apps_buf), " ") == 0 &&
+                apps_buf[0] != '\0') {
+                char *p = NULL;
+                char *save = NULL;
+                for (p = strtok_r(apps_buf, " \t", &save); p && app_count < 64;
+                     p = strtok_r(NULL, " \t", &save)) {
+                    int appid = atoi(p);
+                    if (appid > 0) {
+                        struct json_object *app_obj = json_object_new_object();
+                        if (app_obj) {
+                            json_object_object_add(app_obj, "id", json_object_new_int(appid));
+                            json_object_object_add(app_obj, "name",
+                                                   json_object_new_string(get_app_name_by_id(appid)));
+                            json_object_array_add(app_list, app_obj);
+                            app_count++;
+                        }
+                    }
+                }
+            } else {
+                /* 单值 option 兜底 */
+                {
+                    char one[32] = {0};
+                    if (fwx_uci_get_value(ctx, path, one, sizeof(one)) == 0) {
+                        int appid = atoi(one);
+                        if (appid > 0) {
+                            struct json_object *app_obj = json_object_new_object();
+                            if (app_obj) {
+                                json_object_object_add(app_obj, "id", json_object_new_int(appid));
+                                json_object_object_add(app_obj, "name",
+                                                       json_object_new_string(get_app_name_by_id(appid)));
+                                json_object_array_add(app_list, app_obj);
+                                app_count++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        json_object_object_add(rule_obj, "app_list", app_list);
+        json_object_array_add(arr, rule_obj);
+        if (app_count > 0) {
+            *matched = 1;
+        }
+    }
+    uci_free_context(ctx);
+}
+
+struct json_object *fwx_api_get_parental_control_detail(struct json_object *req_obj)
+{
+    struct json_object *mac_obj = NULL;
+    struct json_object *data_obj = NULL;
+    struct json_object *af_rules = NULL;
+    struct json_object *mf_rules = NULL;
+    const char *mac = NULL;
+    char norm[EXT_MAC_LEN] = {0};
+    int af_whitelist = 0;
+    int mf_whitelist = 0;
+    int app_matched = 0;
+    const char *status_key = "unlimited";
+
+    if (!req_obj || !json_object_object_get_ex(req_obj, "mac", &mac_obj) || !mac_obj) {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+    mac = json_object_get_string(mac_obj);
+    ext_norm_mac(mac ? mac : "", norm, sizeof(norm));
+    if (norm[0] == '\0') {
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+
+    data_obj = json_object_new_object();
+    af_rules = json_object_new_array();
+    mf_rules = json_object_new_array();
+    if (!data_obj || !af_rules || !mf_rules) {
+        if (data_obj) {
+            json_object_put(data_obj);
+        }
+        if (af_rules) {
+            json_object_put(af_rules);
+        }
+        if (mf_rules) {
+            json_object_put(mf_rules);
+        }
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    }
+
+    af_whitelist = ext_uci_mac_in_array_list("appfilter_whitelist", "whitelist_mac", norm);
+    mf_whitelist = ext_uci_mac_in_array_list("macfilter_whitelist", "whitelist_mac", norm);
+
+    ext_detail_appfilter_rules(af_rules, norm, &app_matched);
+    ext_collect_macfilter_rules(mf_rules, norm, &app_matched);
+
+    if (mf_whitelist) {
+        status_key = "unlimited";
+    } else if (ext_mbl_hit(norm) > 0) {
+        status_key = "mac_blocked";
+    } else if (app_matched && !af_whitelist) {
+        status_key = "app_limited";
+    }
+
+    json_object_object_add(data_obj, "pc_status", json_object_new_string(status_key));
+    json_object_object_add(data_obj, "pc_status_key", json_object_new_string(status_key));
+    json_object_object_add(data_obj, "af_whitelist", json_object_new_int(af_whitelist ? 1 : 0));
+    json_object_object_add(data_obj, "mf_whitelist", json_object_new_int(mf_whitelist ? 1 : 0));
+    json_object_object_add(data_obj, "appfilter_rules", af_rules);
+    json_object_object_add(data_obj, "macfilter_rules", mf_rules);
     return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
 }

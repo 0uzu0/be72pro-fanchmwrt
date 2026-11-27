@@ -2,13 +2,17 @@
 # -*- coding: utf-8 -*-
 """
 给 24.10.4 的 fwxd 补齐缺失接口（防火墙 / 引导状态 / 历史流量 / 记录白名单 /
-每日汇总 / 家长控制规则），并插入白名单生效所需的过滤行。
+每日汇总 / 家长控制规则与详情 / 设备黑名单），并插入白名单生效所需的过滤行。
 
-只做四类改动，全部幂等：
-  1. 把 patches/fwxd/ 下的新文件拷进 package/fcm/fwxd/src/
-  2. fwx_ubus.c：插「10 个函数声明 + 10 行分派表项」
+只做五类改动，全部幂等：
+  1. 把 patches/fwxd/ 下的新文件拷进 package/fcm/fwxd/（源码进 src/，
+     mac_blacklist.config 进 files/，并在顶层 Makefile 补安装行）
+  2. fwx_ubus.c：插「15 个函数声明 + 15 行分派表项」
   3. fwxd/src/Makefile：OBJS 追加 fwx_firewall.o fwx_ext_compat.o
-  4. 白名单生效的过滤行（用户态，不动内核）：
+  4. 顶层 fwxd/Makefile：追加 mac_blacklist.config 的 INSTALL_DATA 行
+     （named section 'base'，黑名单 uci key 依赖它；安装行在顶层
+       Makefile 的 install 段，OBJS 在 src/Makefile —— 两个文件别混）
+  5. 白名单生效的过滤行（用户态，不动内核）：
        - fwx_user.c  add_user_record 开头跳过白名单设备（新记录不入库）
        - fwx_ubus.c  get_user_records 两个遍历循环里跳过（存量记录不显示）
        - fwx_ubus.c  fwx_api_visit_list 遍历里跳过（访问明细不显示）
@@ -33,14 +37,19 @@ ROOT = os.path.dirname(HERE)
 SRC_DIR = os.path.join(ROOT, "patches", "fwxd")
 
 FWXD_REL = "package/fcm/fwxd/src"
+FWXD_TOP_REL = "package/fcm/fwxd"
 UBUS_REL = FWXD_REL + "/fwx_ubus.c"
 USER_REL = FWXD_REL + "/fwx_user.c"
 MK_REL = FWXD_REL + "/Makefile"
+MK_TOP_REL = FWXD_TOP_REL + "/Makefile"
 
-NEW_FILES = ["fwx_firewall.c", "fwx_firewall.h", "fwx_ext_compat.c"]
+NEW_FILES = ["fwx_firewall.c", "fwx_firewall.h", "fwx_ext_compat.c",
+             "mac_blacklist.config"]  # named section base，key 与 25.12 一致
 
 # 分派表前的声明（fwx_ubus.c 里这些函数没有定义，只有声明后才不会被
-# -Werror=implicit-function-declaration 判死）
+# -Werror=implicit-function-declaration 判死）。注意：fwx_ext_record_whitelisted
+# 的声明必须在文件顶部（build-23 的教训：首个调用点在 4198 行，表声明在
+# 4663 行 —— 声明晚于使用 = implicit declaration = 编译失败）。
 DECL_ANCHOR = "static fwx_api_node_t fwx_api_node_list[] = {"
 DECL_BLOCK = """/* ---- be72: 24.10.4 缺失接口的声明（实现在 fwx_firewall.c / fwx_ext_compat.c） ---- */
 struct json_object *fwx_api_get_firewall(struct json_object *req_obj);
@@ -53,6 +62,11 @@ struct json_object *fwx_api_add_record_whitelist(struct json_object *req_obj);
 struct json_object *fwx_api_del_record_whitelist(struct json_object *req_obj);
 struct json_object *fwx_api_get_user_daily_summary(struct json_object *req_obj);
 struct json_object *fwx_api_get_user_parental_control_rules(struct json_object *req_obj);
+struct json_object *fwx_api_get_mac_blacklist(struct json_object *req_obj);
+struct json_object *fwx_api_add_mac_blacklist(struct json_object *req_obj);
+struct json_object *fwx_api_del_mac_blacklist(struct json_object *req_obj);
+struct json_object *fwx_api_get_system_base_info(struct json_object *req_obj);
+struct json_object *fwx_api_get_parental_control_detail(struct json_object *req_obj);
 
 """
 
@@ -70,6 +84,12 @@ TABLE_ROWS = """    /* ---- be72: 防火墙 / 引导状态 ---- */
     {"del_record_whitelist", fwx_api_del_record_whitelist, 1, FWX_API_METHOD_POST},
     {"get_user_daily_summary", fwx_api_get_user_daily_summary, 0, FWX_API_METHOD_GET},
     {"get_user_parental_control_rules", fwx_api_get_user_parental_control_rules, 0, FWX_API_METHOD_GET},
+    /* ---- be72: 设备黑名单 / 系统基础信息 / 家长控制详情 ---- */
+    {"get_mac_blacklist", fwx_api_get_mac_blacklist, 0, FWX_API_METHOD_GET},
+    {"add_mac_blacklist", fwx_api_add_mac_blacklist, 1, FWX_API_METHOD_POST},
+    {"del_mac_blacklist", fwx_api_del_mac_blacklist, 1, FWX_API_METHOD_POST},
+    {"get_system_base_info", fwx_api_get_system_base_info, 0, FWX_API_METHOD_GET},
+    {"get_parental_control_detail", fwx_api_get_parental_control_detail, 0, FWX_API_METHOD_GET},
 """
 
 # 白名单过滤：add_user_record 开头（fwx_user.c，全文件唯一）
@@ -86,17 +106,6 @@ ADD_RECORD_INSERT = """
             return;
         }
     }
-"""
-
-# 白名单查询的前向声明：必须插在 fwx_ubus.c 顶部（第一个调用点在 4198 行，
-# 而分派表声明在 4663 行 —— 插在表前仍然是「声明晚于使用」，
-# -Werror=implicit-function-declaration 会直接判死，build-23 已经栽过一次）
-TOP_DECL_ANCHOR = """extern fwx_status_t g_fwx_status;
-extern void reload_oaf_rule(void);
-"""
-TOP_DECL_INSERT = """
-/* be72: 记录白名单查询（实现见 fwx_ext_compat.c），供下方多个过滤点调用 */
-int fwx_ext_record_whitelisted(const char *mac);
 """
 
 # 白名单过滤：get_user_records 的两个遍历循环（计数 + 输出），各出现一次
@@ -142,13 +151,18 @@ def main():
     # ---------- 1. 拷新文件 ----------
     for name in NEW_FILES:
         src = os.path.join(SRC_DIR, name)
-        dst = os.path.join(src_dir, name)
+        if name == "mac_blacklist.config":
+            # 安装文件进 files/（顶层 Makefile 会 INSTALL 它）
+            dst = os.path.join(tree, FWXD_TOP_REL, "files", name)
+        else:
+            dst = os.path.join(src_dir, name)
         if not os.path.isfile(src):
             die("仓库里缺 patches/fwxd/%s" % name)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
-    print("  [+] 拷入 %d 个源文件（防火墙 / 引导状态 / 流量与白名单扩展）" % len(NEW_FILES))
+    print("  [+] 拷入 %d 个源文件（防火墙 / 引导状态 / 扩展接口 / 黑名单配置）" % len(NEW_FILES))
 
-    # ---------- 2. fwx_ubus.c：声明 + 分派表 ----------
+    # ---------- 2. fwx_ubus.c：顶部声明 + 分派表 ----------
     ubus = os.path.join(tree, UBUS_REL)
     if not os.path.isfile(ubus):
         die("找不到 %s" % UBUS_REL)
@@ -163,14 +177,17 @@ def main():
             die("锚点缺失：api 分派表（上游可能改了表名）")
         if text.count(TABLE_ANCHOR) != 1:
             die("锚点异常：分派表哨兵行出现 %d 次（期望 1）" % text.count(TABLE_ANCHOR))
-        # 顶部前向声明（必须在第一个过滤点之前，见 TOP_DECL_INSERT 注释）
-        if text.count(TOP_DECL_ANCHOR) != 1:
-            die("锚点异常：fwx_ubus.c 顶部声明区锚点出现 %d 次（期望 1）" % text.count(TOP_DECL_ANCHOR))
-        text = text.replace(TOP_DECL_ANCHOR, TOP_DECL_ANCHOR + TOP_DECL_INSERT, 1)
+        # 顶部前向声明（必须在第一个过滤点之前，见 DECL_BLOCK 上方注释）
+        top_anchor = "extern fwx_status_t g_fwx_status;\nextern void reload_oaf_rule(void);\n"
+        if text.count(top_anchor) != 1:
+            die("锚点异常：fwx_ubus.c 顶部声明区锚点出现 %d 次（期望 1）" % text.count(top_anchor))
+        top_insert = ("\n/* be72: 记录白名单查询（实现见 fwx_ext_compat.c），供下方多个过滤点调用 */\n"
+                      "int fwx_ext_record_whitelisted(const char *mac);\n")
+        text = text.replace(top_anchor, top_anchor + top_insert, 1)
         text = text.replace(DECL_ANCHOR, DECL_BLOCK + DECL_ANCHOR, 1)
         text = text.replace(TABLE_ANCHOR, TABLE_ROWS + TABLE_ANCHOR, 1)
         changed = True
-        print("  [+] fwx_ubus.c：顶部前向声明 + 10 行分派（防火墙/引导/历史流量/白名单/汇总/家长控制）")
+        print("  [+] fwx_ubus.c：顶部前向声明 + 15 行分派（防火墙/引导/流量/白名单/汇总/家长控制/黑名单/基础信息/详情）")
 
     # 白名单过滤：get_user_records 两个循环
     n = text.count(USER_RECORDS_ANCHOR)
@@ -218,41 +235,193 @@ def main():
     else:
         print("  [!] add_user_record 锚点异常，跳过写入侧过滤（读取侧过滤仍在）")
 
-    # ---------- 4. Makefile ----------
+    # ---------- 3b. rule_manager.lua：设备黑名单的执行链 ----------
+    # 25.12 的黑名单生效机制：rule_manager（fwxd 的规则守护）把
+    # mac_blacklist.base.mac_list 读出、作为内核规则 102 下发（mode=SINGLE_USER，
+    # mac_list 命中的设备被断网）—— 24.10 的 rule_manager.lua 没有这段，
+    # 只补 fwxd api 的话黑名单只是存了个列表，不生效。
+    # 以下 Lua 全部取自 25.12 原文（自包含、空格缩进），锚点式插入。
+    lua = os.path.join(tree, FWXD_TOP_REL, "files", "rule_manager.lua")
+    if not os.path.isfile(lua):
+        print("  [!] 找不到 rule_manager.lua，跳过黑名单执行链")
+    else:
+        with open(lua, "r", encoding="utf-8", errors="surrogateescape") as f:
+            ltext = f.read()
+        lchanged = False
+
+        # 1) 常量（行尾有尾随空格，按行前缀匹配插入）
+        if "BLACKLIST_MAC_FILTER_RULE_ID" not in ltext:
+            lconst = 'local BLACKLIST_MAC_FILTER_RULE_ID = 102\n'
+            hit_c = False
+            for i, ln in enumerate(ltext.splitlines(True)):
+                if ln.startswith("local SINGLE_MAC_FILTER_RULE_ID = 101"):
+                    ltext = "".join(ltext.splitlines(True)[:i + 1]) + lconst + \
+                        "".join(ltext.splitlines(True)[i + 1:])
+                    hit_c = True
+                    break
+            if hit_c:
+                lchanged = True
+                print("  [+] rule_manager.lua：BLACKLIST 规则常量")
+            else:
+                print("  [!] rule_manager: 常量锚点未命中")
+
+        # 2) load_mac_blacklist()（25.12 原样，含 get_list 探测降级）
+        if "local function load_mac_blacklist()" not in ltext:
+            lfn = (
+                'local function load_mac_blacklist()\n'
+                '    local uci_cursor = uci.cursor()\n'
+                '    local mac_list = {}\n'
+                '    local ok = false\n'
+                '\n'
+                '    if type(uci_cursor.get_list) == "function" then\n'
+                '        local list_ret = uci_cursor:get_list("mac_blacklist", "base", "mac_list")\n'
+                '        if type(list_ret) == "table" then\n'
+                '            mac_list = list_ret\n'
+                '            ok = true\n'
+                '        elseif type(list_ret) == "string" then\n'
+                '            mac_list = {list_ret}\n'
+                '            ok = true\n'
+                '        end\n'
+                '    end\n'
+                '\n'
+                '    if not ok then\n'
+                '        local raw = uci_cursor:get("mac_blacklist", "base", "mac_list")\n'
+                '        if type(raw) == "table" then\n'
+                '            mac_list = raw\n'
+                '        elseif type(raw) == "string" then\n'
+                '            mac_list = {raw}\n'
+                '        else\n'
+                '            mac_list = {}\n'
+                '        end\n'
+                '    end\n'
+                '\n'
+                '    if type(uci_cursor.unload) == "function" then\n'
+                '        pcall(function()\n'
+                '            uci_cursor:unload("mac_blacklist")\n'
+                '        end)\n'
+                '    end\n'
+                '\n'
+                '    local uniq = {}\n'
+                '    local normalized_list = {}\n'
+                '    for _, mac in ipairs(mac_list) do\n'
+                '        local normalized_mac = tostring(mac or ""):upper()\n'
+                '        if normalized_mac ~= "" and not uniq[normalized_mac] then\n'
+                '            uniq[normalized_mac] = true\n'
+                '            table.insert(normalized_list, normalized_mac)\n'
+                '        end\n'
+                '    end\n'
+                '    table.sort(normalized_list)\n'
+                '    log(string.format("Loaded %d MAC blacklist entries", #normalized_list))\n'
+                '    return normalized_list\n'
+                'end\n'
+                '\n')
+            b = 'local function init_single_mac_rule()\n'
+            if b not in ltext:
+                print("  [!] rule_manager: init_single_mac_rule 锚点未命中")
+            else:
+                ltext = ltext.replace(b, lfn + b, 1)
+                lchanged = True
+                print("  [+] rule_manager.lua：load_mac_blacklist()")
+
+        # 3) 同步函数：每周期把黑名单 mac_list 设到内核规则 102
+        if "local function sync_blacklist_mac_rule()" not in ltext:
+            lsfn = (
+                'local function sync_blacklist_mac_rule()\n'
+                '    local mac_list = load_mac_blacklist()\n'
+                '    if set_macfilter_rule_mac_list(BLACKLIST_MAC_FILTER_RULE_ID, mac_list, 2) then\n'
+                '        log(string.format("MACFilter blacklist rule synced: %d devices", #mac_list))\n'
+                '        return true\n'
+                '    end\n'
+                '    return false\n'
+                'end\n'
+                '\n')
+            c = 'local function process_appfilter_rules(current_info)\n'
+            if c not in ltext:
+                print("  [!] rule_manager: process_appfilter_rules 锚点未命中")
+            else:
+                ltext = ltext.replace(c, lsfn + c, 1)
+                lchanged = True
+                print("  [+] rule_manager.lua：sync_blacklist_mac_rule()")
+
+        # 4) 主循环调用（在 process_macfilter_rules 之后）
+        if "sync_blacklist_mac_rule()" in ltext and "            sync_blacklist_mac_rule()" not in ltext:
+            d = "            process_macfilter_rules(current_info)\n"
+            if d not in ltext:
+                print("  [!] rule_manager: 主循环锚点未命中")
+            else:
+                ltext = ltext.replace(d, d + "            sync_blacklist_mac_rule()\n", 1)
+                lchanged = True
+                print("  [+] rule_manager.lua：主循环加入黑名单同步")
+
+        if lchanged:
+            with open(lua, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(ltext)
+
+    # ---------- 4. src/Makefile：OBJS ----------
     mk = os.path.join(tree, MK_REL)
     if not os.path.isfile(mk):
         die("找不到 %s" % MK_REL)
     with open(mk, "r", encoding="utf-8", errors="surrogateescape") as f:
         mk_text = f.read()
+    mk_changed = False
 
     if "fwx_firewall.o" in mk_text:
-        print("  [skip] Makefile 已含 fwx_firewall.o")
+        print("  [skip] src/Makefile 已含 fwx_firewall.o")
     else:
-        lines = mk_text.splitlines(True)
         hit = False
-        for i, line in enumerate(lines):
+        for line in mk_text.splitlines(True):
             if line.startswith("OBJS:="):
-                lines[i] = line.rstrip("\n") + " fwx_firewall.o fwx_ext_compat.o\n"
+                new_line = line.rstrip("\n") + " fwx_firewall.o fwx_ext_compat.o\n"
+                mk_text = mk_text.replace(line, new_line, 1)
                 hit = True
                 break
         if not hit:
-            die("锚点缺失：Makefile 里没有 OBJS:= 行")
-        with open(mk, "w", encoding="utf-8", errors="surrogateescape") as f:
-            f.write("".join(lines))
-        print("  [+] Makefile：OBJS 追加 fwx_firewall.o fwx_ext_compat.o")
+            die("锚点缺失：src/Makefile 里没有 OBJS:= 行")
+        mk_changed = True
+        print("  [+] src/Makefile：OBJS 追加 fwx_firewall.o fwx_ext_compat.o")
 
-    # ---------- 5. 回读自校验 ----------
+    # ---------- 5. 顶层 fwxd/Makefile：mac_blacklist.config 安装 ----------
+    # 注意：安装行在顶层 fwxd/Makefile（install 段），OBJS 在 src/Makefile —— 两个文件别混。
+    # Makefile 命令行以 tab 开头，锚点必须含 tab。
+    mk_top = os.path.join(tree, MK_TOP_REL)
+    if not os.path.isfile(mk_top):
+        print("  [!] 找不到顶层 %s，跳过 mac_blacklist.config 安装" % MK_TOP_REL)
+    else:
+        with open(mk_top, "r", encoding="utf-8", errors="surrogateescape") as f:
+            top_text = f.read()
+        anchor_tab = "\t"
+        mbl_anchor = (anchor_tab + "$(INSTALL_DATA) ./files/appfilter_whitelist.config "
+                      "$(1)/etc/config/appfilter_whitelist\n")
+        mbl_line = (anchor_tab + "$(INSTALL_DATA) ./files/mac_blacklist.config "
+                    "$(1)/etc/config/mac_blacklist\n")
+        if "mac_blacklist.config $(1)/etc/config/mac_blacklist" in top_text:
+            print("  [skip] 顶层 Makefile 已安装 mac_blacklist.config")
+        elif mbl_anchor in top_text:
+            top_text = top_text.replace(mbl_anchor, mbl_anchor + mbl_line, 1)
+            with open(mk_top, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(top_text)
+            print("  [+] 顶层 Makefile：追加 mac_blacklist.config 安装行")
+        else:
+            print("  [!] 顶层 Makefile 安装行锚点未找到——mac_blacklist 的 uci 包将不存在，黑名单页会报错")
+
+    if mk_changed:
+        with open(mk, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(mk_text)
+
+    # ---------- 6. 回读自校验 ----------
     with open(ubus, "r", encoding="utf-8", errors="surrogateescape") as f:
         final = f.read()
-    for api in ("get_firewall", "set_firewall", "get_init_status", "set_init_status",
-                "get_history_traffic_stats", "get_record_whitelist",
-                "add_record_whitelist", "del_record_whitelist",
-                "get_user_daily_summary", "get_user_parental_control_rules"):
+    apis = ("get_firewall", "set_firewall", "get_init_status", "set_init_status",
+            "get_history_traffic_stats", "get_record_whitelist",
+            "add_record_whitelist", "del_record_whitelist",
+            "get_user_daily_summary", "get_user_parental_control_rules",
+            "get_mac_blacklist", "add_mac_blacklist", "del_mac_blacklist",
+            "get_system_base_info", "get_parental_control_detail")
+    for api in apis:
         if '"%s", fwx_api_%s' % (api, api) not in final:
             die("自校验失败：分派表里没有 %s" % api)
 
-    # 前向声明必须严格早于第一个调用点（build-23 的教训：声明插在分派表前、
-    # 调用点在更早的函数里，-Werror=implicit-function-declaration 直接编译失败）
+    # 前向声明必须严格早于第一个调用点（build-23 的教训）
     decl_pos = final.find("int fwx_ext_record_whitelisted(const char *mac);")
     first_call = min(
         [p for p in (final.find("fwx_ext_record_whitelisted(record->mac)"),
@@ -269,11 +438,13 @@ def main():
                    encoding="utf-8", errors="surrogateescape").read()
     for sym in ("fwx_ext_record_whitelisted", "fwx_api_get_history_traffic_stats",
                 "fwx_api_get_user_daily_summary",
-                "fwx_api_get_user_parental_control_rules"):
+                "fwx_api_get_user_parental_control_rules",
+                "fwx_api_get_mac_blacklist", "fwx_api_get_parental_control_detail",
+                "fwx_api_get_system_base_info"):
         if sym not in ext_src:
             die("自校验失败：fwx_ext_compat.c 里没有 %s" % sym)
 
-    print("  ✔ 自校验通过：10 个接口在分派表中，源文件与过滤就位")
+    print("  ✔ 自校验通过：%d 个接口在分派表中，源文件与过滤就位" % len(apis))
     return 0
 
 
