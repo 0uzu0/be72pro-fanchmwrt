@@ -782,9 +782,8 @@ button.cbi-button {
 	min-width: 0;
 }
 
-/* 仪表盘顶部指标卡：设计稿 .g4（4 列），当前是 5 列 */
-.dash .stats-grid,
-.dash .card-row {
+/* 仪表盘顶部指标卡：设计稿 .g4（4 列），真实类名是 .top-stats（5 列） */
+.top-stats {
 	grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
 	gap: 13px !important;
 }
@@ -796,13 +795,13 @@ button.cbi-button {
 	gap: 11px !important;
 }
 
-/* 卡片内的纵向间距统一 13px（设计稿卡片流节奏） */
-.dash > .col,
-.dash > .col-left,
-.dash > .col-right {
+/* 卡片流纵向节奏 13px —— .dash 的直接子是匿名 div（左右两列），没有
+   col-left/col-right 类名，用 :scope > div 命中 */
+.dash > div {
 	display: flex;
 	flex-direction: column;
 	gap: 13px;
+	min-width: 0;
 }
 
 /* 表单标签列宽：设计稿 form-grid 150px */
@@ -817,8 +816,7 @@ button.cbi-button {
 
 /* 移动端：g4 -> 2 列（设计稿响应式） */
 @media (max-width: 900px) {
-	.dash .stats-grid,
-	.dash .card-row {
+	.top-stats {
 		grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 	}
 	#maincontent {
