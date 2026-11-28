@@ -194,6 +194,15 @@ cp -f "$ROOT/patches/whitelist/index.htm" \
 	"$RJ/package/luci-app-fwx-record-whitelist/luasrc/view/index.htm"
 echo "  特征库 + 记录白名单已替换（真实数据源）"
 
+# 2a-9. 黑名单 / MAC 过滤 / 应用过滤（设计稿 #v-blacklist / #v-macfilter / #v-appfilter）
+cp -f "$ROOT/patches/blacklist/list.htm" \
+	"$RJ/package/luci-app-fwx-mac-blacklist/luasrc/view/mac_blacklist/list.htm"
+cp -f "$ROOT/patches/macfilter/rules.htm" \
+	"$RJ/package/luci-app-fwx-macfilter/luasrc/view/macfilter/rules.htm"
+cp -f "$ROOT/patches/appfilter/rules.htm" \
+	"$RJ/package/luci-app-fwx-appfilter/luasrc/view/appfilter/rules.htm"
+echo "  黑名单 / MAC 过滤 / 应用过滤已替换"
+
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），

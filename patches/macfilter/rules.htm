@@ -1,0 +1,73 @@
+<%#
+ MAC 过滤规则（设计基准 #v-macfilter；数据：get_mac_filter_rules / add_mac_filter_rule / delete_mac_filter_rule）
+ 说明：get_mf_status / get_mac_filter_user 在 24.10.4 不存在，本页只做规则本身（重新整合布局）
+-%>
+<%+header%>
+<div class="fwx-mf">
+	<div class="ds-card">
+		<h3>MAC 过滤规则 <span class="ds-tag" id="mf-count">--</span></h3>
+		<div class="ds-hint">按 MAC 控制上网：拒绝=断网；规则按顺序匹配，黑名单规则（102）由「上网黑名单」页维护。</div>
+		<div class="ds-add">
+			<input class="inp" id="mf-name" placeholder="规则名称">
+			<input class="inp" id="mf-macs" placeholder="MAC，多个用逗号分隔">
+			<select class="inp sel" id="mf-action"><option value="1">允许</option><option value="0">拒绝</option></select>
+			<button class="btn" id="mf-add">添加规则</button>
+		</div>
+		<table class="tbl"><thead><tr><th>ID</th><th>名称</th><th>动作</th><th>设备数</th><th>操作</th></tr></thead>
+		<tbody id="mf-body"><tr><td colspan="5" class="ds-hint-td">加载中…</td></tr></tbody></table>
+	</div>
+</div>
+<style>
+.fwx-mf .ds-card{background:var(--ds-panel,#fff);border:1px solid var(--ds-line,rgba(31,35,40,.1));border-radius:var(--ds-r-lg,16px);padding:17px 19px}
+.fwx-mf h3{font-size:12.5px;font-weight:500;color:var(--ds-text2,#59636e);margin:0 0 9px;display:flex;gap:8px;align-items:center}
+.fwx-mf .ds-tag{padding:1px 8px;border-radius:99px;font-size:11px;background:var(--ds-panel2,#f6f8fa);color:var(--ds-text2,#59636e)}
+.fwx-mf .ds-hint{font-size:11px;color:var(--ds-text3,#818b98);margin-bottom:13px}
+.fwx-mf .ds-add{display:flex;gap:9px;margin-bottom:13px;flex-wrap:wrap}
+.fwx-mf .inp{flex:1;min-width:120px;padding:8px 12px;font-size:12.5px;border:1px solid var(--ds-line2,rgba(31,35,40,.16));border-radius:9px;background:var(--ds-panel,#fff);color:var(--ds-text,#1f2328)}
+.fwx-mf .sel{max-width:110px}
+.fwx-mf .btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:12.5px;background:var(--ds-accent,#0a7cff);color:#fff}
+.fwx-mf .btn.del{background:#d33;padding:5px 12px;font-size:11.5px}
+.fwx-mf .tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.fwx-mf .tbl th{text-align:left;font-weight:500;color:var(--ds-text2,#59636e);font-size:11.5px;padding:9px 10px;border-bottom:1px solid var(--ds-line,rgba(31,35,40,.1))}
+.fwx-mf .tbl td{padding:10px;border-bottom:1px solid var(--ds-line,rgba(31,35,40,.06))}
+.fwx-mf .ds-hint-td{text-align:center;color:var(--ds-text3,#818b98);font-size:12px;padding:14px}
+</style>
+<script>
+(function(){
+	var $=function(i){return document.getElementById(i);};
+	function post(u,d){return new Promise(function(r){try{new XHR().post(u,d,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function api(u,p){return new Promise(function(r){try{new XHR().get(u,p,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+	function load(){
+		api('<%=url("admin/fwx/get_mac_filter_rules")%>',{}).then(function(r){
+			var list=(r&&r.data&&r.data.list)||[];
+			$('mf-count').textContent=list.length+' 条';
+			var box=$('mf-body');
+			if(!list.length){box.innerHTML='<tr><td colspan="5" class="ds-hint-td">还没有规则</td></tr>';return;}
+			box.innerHTML=list.map(function(x){
+				var id=x.id!=null?x.id:'--';
+				var act=String(x.action)=== '1' || x.action==='allow' ? '允许' : '拒绝';
+				var n=(x.mac_list&&x.mac_list.length)||x.mac_count||0;
+				return '<tr><td>'+esc(id)+'</td><td>'+esc(x.name||('规则 '+id))+'</td><td>'+act+'</td><td>'+n+'</td>'+
+				'<td><button class="btn del" data-id="'+esc(id)+'">删除</button></td></tr>';
+			}).join('');
+			Array.prototype.forEach.call(box.querySelectorAll('.btn.del'),function(b){
+				b.addEventListener('click',function(){
+					if(!confirm('删除规则 '+b.getAttribute('data-id')+'?'))return;
+					post('<%=url("admin/fwx/delete_mac_filter_rule")%>',{rule_id:b.getAttribute('data-id')}).then(load);
+				});
+			});
+		});
+	}
+	$('mf-add').addEventListener('click',function(){
+		var name=$('mf-name').value.trim();
+		var macs=$('mf-macs').value.trim();
+		if(!name||!macs){alert('名称和 MAC 必填');return;}
+		post('<%=url("admin/fwx/add_mac_filter_rule")%>',{name:name,mac_list:macs,action:Number($('mf-action').value)}).then(function(){
+			$('mf-name').value='';$('mf-macs').value='';load();
+		});
+	});
+	load();
+})();
+</script>
+<%+footer%>

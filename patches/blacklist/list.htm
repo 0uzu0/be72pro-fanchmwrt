@@ -1,0 +1,64 @@
+<%#
+ 上网黑名单（设计基准 #v-blacklist；数据：get_mac_blacklist / add_mac_blacklist / del_mac_blacklist）
+-%>
+<%+header%>
+<div class="fwx-bl">
+	<div class="ds-card">
+		<h3>黑名单 <span class="ds-tag" id="bl-count">--</span></h3>
+		<div class="ds-hint">黑名单设备：立即断开并禁止访问外网（规则 102 生效），可从终端列表一键加入。</div>
+		<div class="ds-add">
+			<input class="inp" id="bl-mac" placeholder="MAC（aa:bb:cc:dd:ee:ff）">
+			<button class="btn" id="bl-add">加入黑名单</button>
+		</div>
+		<table class="tbl"><thead><tr><th>设备</th><th>MAC</th><th>操作</th></tr></thead>
+		<tbody id="bl-body"><tr><td colspan="3" class="ds-hint-td">加载中…</td></tr></tbody></table>
+	</div>
+</div>
+<style>
+.fwx-bl .ds-card{background:var(--ds-panel,#fff);border:1px solid var(--ds-line,rgba(31,35,40,.1));border-radius:var(--ds-r-lg,16px);padding:17px 19px}
+.fwx-bl h3{font-size:12.5px;font-weight:500;color:var(--ds-text2,#59636e);margin:0 0 9px;display:flex;gap:8px;align-items:center}
+.fwx-bl .ds-tag{padding:1px 8px;border-radius:99px;font-size:11px;background:var(--ds-panel2,#f6f8fa);color:var(--ds-text2,#59636e)}
+.fwx-bl .ds-hint{font-size:11px;color:var(--ds-text3,#818b98);margin-bottom:13px}
+.fwx-bl .ds-add{display:flex;gap:9px;margin-bottom:13px}
+.fwx-bl .inp{flex:1;padding:8px 12px;font-size:12.5px;border:1px solid var(--ds-line2,rgba(31,35,40,.16));border-radius:9px;background:var(--ds-panel,#fff);color:var(--ds-text,#1f2328)}
+.fwx-bl .btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:12.5px;background:var(--ds-accent,#0a7cff);color:#fff}
+.fwx-bl .btn.del{background:#d33;padding:5px 12px;font-size:11.5px}
+.fwx-bl .tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.fwx-bl .tbl th{text-align:left;font-weight:500;color:var(--ds-text2,#59636e);font-size:11.5px;padding:9px 10px;border-bottom:1px solid var(--ds-line,rgba(31,35,40,.1))}
+.fwx-bl .tbl td{padding:10px;border-bottom:1px solid var(--ds-line,rgba(31,35,40,.06))}
+.fwx-bl .ds-hint-td{text-align:center;color:var(--ds-text3,#818b98);font-size:12px;padding:14px}
+</style>
+<script>
+(function(){
+	var $=function(i){return document.getElementById(i);};
+	var BASE='<%=url("admin/fwx/")%>';
+	function api(n,p){return new Promise(function(r){try{new XHR().get(BASE+n,p,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function post(n,d){return new Promise(function(r){try{new XHR().post(BASE+n,d,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+	function load(){
+		api('get_mac_blacklist',{}).then(function(r){
+			var list=(r&&r.data&&r.data.list)||[];
+			$('bl-count').textContent=list.length+' 台';
+			var box=$('bl-body');
+			if(!list.length){box.innerHTML='<tr><td colspan="3" class="ds-hint-td">黑名单为空</td></tr>';return;}
+			box.innerHTML=list.map(function(x){
+				var mac=x.mac||x;
+				return '<tr><td>'+esc(x.hostname||x.nickname||'--')+'</td><td>'+esc(mac)+'</td><td><button class="btn del" data-mac="'+esc(mac)+'">移出</button></td></tr>';
+			}).join('');
+			Array.prototype.forEach.call(box.querySelectorAll('.btn.del'),function(b){
+				b.addEventListener('click',function(){
+					if(!confirm('移出黑名单：'+b.getAttribute('data-mac')+'?'))return;
+					post('del_mac_blacklist',{mac:b.getAttribute('data-mac')}).then(load);
+				});
+			});
+		});
+	}
+	$('bl-add').addEventListener('click',function(){
+		var mac=$('bl-mac').value.trim();
+		if(!/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(mac)){alert('MAC 格式不对');return;}
+		post('add_mac_blacklist',{mac:mac}).then(function(){$('bl-mac').value='';load();});
+	});
+	load();
+})();
+</script>
+<%+footer%>
