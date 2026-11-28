@@ -75,8 +75,7 @@ return baseclass.extend({
 	render(tree) {
 		let node = tree;
 		let url = '';
-		this.renderModeMenu(tree);
-		this.renderCategoryNav(); 
+		this.renderCategoryNav();
 		this.renderBreadcrumb(tree);
 
 		let currentLevel = 0;
@@ -110,51 +109,12 @@ return baseclass.extend({
 	},
 
 	renderCategoryNav() {
-		const savedCategory = localStorage.getItem('luci-menu-category') || 'basic';
-		
 		const isWide = this.isWideScreen();
-		
+
 		if (isWide) {
 			const titleText = 'FanchmWrt';
 			const brandElement = E('a', { 'class': 'top-navbar-brand', 'href': L.url('admin', 'fwx_dashboard') }, [
 				E('span', { 'class': 'top-navbar-title' }, [titleText])
-			]);
-			brandElement.addEventListener('click', function() {
-				localStorage.setItem('luci-menu-category', 'basic');
-			});
-			
-			const createModeItem = (category, title, href) => {
-				const item = E('li', {
-					'class': 'mode-item' + (savedCategory === category ? ' active' : ''),
-					'data-category': category
-				}, [
-					E('a', { 'href': href }, [
-						E('span', { 'class': 'mode-check' }, [
-							E('img', { 'src': '/luci-static/fanchmwrt/icons/fwx_check.png', 'alt': '' })
-						]),
-						E('span', { 'class': 'mode-title' }, [_(title)])
-					])
-				]);
-
-				item.querySelector('a').addEventListener('click', function() {
-					localStorage.setItem('luci-menu-category', category);
-				});
-
-				return item;
-			};
-
-			const modeMenu = E('div', { 'class': 'top-user-menu top-mode-menu' }, [
-				E('button', {
-					'class': 'top-user-button top-more-button',
-					'type': 'button',
-					'aria-label': _('Mode menu')
-				}, [
-					E('span', { 'class': 'top-more-icon' }, ['⋮'])
-				]),
-				E('ul', { 'class': 'top-user-dropdown top-mode-dropdown' }, [
-					createModeItem('basic', 'Normal Mode', L.url('admin', 'fwx_dashboard')),
-					createModeItem('advanced', 'Advanced Mode', L.url('admin', 'status', 'overview'))
-				])
 			]);
 
 			const userMenu = E('div', { 'class': 'top-user-menu top-profile-menu' }, [
@@ -174,7 +134,6 @@ return baseclass.extend({
 
 			const closeTopMenus = () => {
 				userMenu.classList.remove('open');
-				modeMenu.classList.remove('open');
 			};
 
 			const userBtn = userMenu.querySelector('.top-user-button');
@@ -185,17 +144,6 @@ return baseclass.extend({
 				closeTopMenus();
 				if (shouldOpen) {
 					userMenu.classList.add('open');
-				}
-			});
-
-			const modeBtn = modeMenu.querySelector('.top-more-button');
-			modeBtn.addEventListener('click', function(ev) {
-				ev.preventDefault();
-				ev.stopPropagation();
-				const shouldOpen = !modeMenu.classList.contains('open');
-				closeTopMenus();
-				if (shouldOpen) {
-					modeMenu.classList.add('open');
 				}
 			});
 
@@ -211,7 +159,7 @@ return baseclass.extend({
 			});
 
 			document.addEventListener('click', function(ev) {
-				if (!userMenu.contains(ev.target) && !modeMenu.contains(ev.target)) {
+				if (!userMenu.contains(ev.target)) {
 					closeTopMenus();
 				}
 			});
@@ -224,7 +172,7 @@ return baseclass.extend({
 
 			const topNavbarContent = E('div', { 'class': 'top-navbar-content' }, [
 				brandElement,
-				E('div', { 'class': 'top-navbar-right' }, [userMenu, modeMenu])
+				E('div', { 'class': 'top-navbar-right' }, [userMenu])
 			]);
 			const topNavbar = E('div', { 'class': 'top-navbar' }, [topNavbarContent]);
 
@@ -238,10 +186,6 @@ return baseclass.extend({
 		} else {
 			body.appendChild(topNavbar);
 		}
-		
-		setTimeout(() => {
-			this.switchCategory(savedCategory);
-		}, 100);
 		}
 	},
 	

@@ -116,13 +116,13 @@ APPS="luci-app-fwx-resources luci-app-fwx-dashboard luci-app-fwx-dashboard-setti
 luci-app-fwx-user luci-app-fwx-user-record luci-app-fwx-appfilter luci-app-fwx-record \
 luci-app-fwx-record-whitelist luci-app-fwx-macfilter luci-app-fwx-mac-blacklist \
 luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
-luci-app-fwx-accel luci-app-fwx-system luci-app-fwx-firewall"
+luci-app-fwx-system luci-app-fwx-firewall"
 
 mkdir -p "$RJ/package/fcm"
 
-# 2a-3. 四类网络加速页（普通模式新增；仓库内维护，先于 APPS 循环拷入 ——
-#       accel 包不在 fanchmwrt-packages 里，APPS 循环从 $PKG 拷会 stat 失败
-#       （build-41/43 的失败根因））
+# 2a-3. 四类网络加速页（普通模式新增；仓库内维护，独立拷贝。
+#       注意：accel 不在 fanchmwrt-packages 里，【绝不能】加进 APPS 变量
+#       —— APPS 循环从 $PKG 逐个拷贝，会把 build-41/43/44 的 cp 失败重演）
 rm -rf "$RJ/package/fcm/luci-app-fwx-accel"
 cp -r "$ROOT/patches/accel/luci-app-fwx-accel" "$RJ/package/fcm/luci-app-fwx-accel"
 echo "  已放入 luci-app-fwx-accel（游戏/视频/下载/办公加速）"
