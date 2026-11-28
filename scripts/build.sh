@@ -109,12 +109,13 @@ log "2/8 搬 fwx 包进源码树"
 # 装 network / system / firewall —— 已逐个核实它们只写标准 uci
 # （network.lan|wan、system、firewall.@defaults[0]），不碰锐捷私有拓扑。
 # firewall 的后端 api 由下面 2b 的 patch_fwxd_ext.py 补，否则页面打不开数据。
+# 不装 app-center —— 用户实测"没用"，直接从镜像里去掉（菜单随之消失）。
 # 不装 fastnat —— 依赖 SFE 快速转发，锐捷这棵树用的是 HNAT，没有 SFE。
 APPS="luci-app-fwx-resources luci-app-fwx-dashboard luci-app-fwx-dashboard-setting \
 luci-app-fwx-user luci-app-fwx-user-record luci-app-fwx-appfilter luci-app-fwx-record \
 luci-app-fwx-record-whitelist luci-app-fwx-macfilter luci-app-fwx-mac-blacklist \
 luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
-luci-app-fwx-app-center luci-app-fwx-network luci-app-fwx-system luci-app-fwx-firewall"
+luci-app-fwx-network luci-app-fwx-system luci-app-fwx-firewall"
 
 mkdir -p "$RJ/package/fcm"
 for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
@@ -151,6 +152,21 @@ echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
 #   处理方式：defconfig 里显式置 not set（make defconfig 会保留显式关闭），
 #   再在下面 make defconfig 之后做一次硬校验。不删 open-app-filter 源码 ——
 #   它同时提供用户态包，删源码有牵动依赖的风险。
+
+# 2a-2. 关闭 mtkhnat 硬件 offload（DPI 统计与过滤的前提）
+#   本树 kmod-mediatek_hnat 会往 /etc/modules.d/20-mediatek_hnat 写一行 "mtkhnat"，
+#   开机自动加载 → 长连接几包之后就卸载到 PPE 硬件，后续数据包不再经过 netfilter。
+#   后果（实测）：800MB 的下载，fwx 只能数到开头几十 KB，流量统计/App 时长/审计
+#   几乎不动；被 offload 的连接同样绕过应用过滤与黑名单。
+#   这里用 files/ overlay 覆盖那个 modules.d 文件（overlay 在包安装之后应用），
+#   模块仍然装着，只是不自动加载 —— 想恢复加速直接 `modprobe mtkhnat`。
+mkdir -p "$RJ/files/etc/modules.d"
+cat > "$RJ/files/etc/modules.d/20-mediatek_hnat" <<'HNATOFF'
+# 由 be72pro-fanchmwrt 覆盖：默认不加载 mtkhnat（硬件 PPE offload）。
+# 原因：offload 之后数据包绕过 netfilter，fwx 的 DPI 统计与过滤全部失效。
+# 需要满速转发时手动 `modprobe mtkhnat`（或删掉本文件重启）。
+HNATOFF
+echo "  [+] 覆盖 20-mediatek_hnat：默认不加载（保留模块，可 modprobe 恢复）"
 
 # 2b. 给 fwxd 补 24.10.4 缺的两个接口（必须在下面的接口自检之前跑，
 #     否则自检会把「补丁才提供的 api」误报成缺口）：
@@ -332,7 +348,6 @@ REQUIRED_SYMS=(
 	CONFIG_PACKAGE_luci-app-fwx-session-stat
 	CONFIG_PACKAGE_luci-app-fwx-traffic-stat
 	CONFIG_PACKAGE_luci-app-fwx-feature
-	CONFIG_PACKAGE_luci-app-fwx-app-center
 	CONFIG_PACKAGE_luci-app-fwx-network
 	CONFIG_PACKAGE_luci-app-fwx-system
 	CONFIG_PACKAGE_luci-app-fwx-firewall

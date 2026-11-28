@@ -448,6 +448,14 @@ v3 还处理了两件容易漏的事：
 `mode==2` 才比对 `user_mac`；`pc_status` 是否算「正在生效」还要看当日时段是否命中
 （`rule_manager` 里没有 `time_rule` 的规则从不生效，这里口径一致）。
 
+**DPI 与硬件 offload 互斥**：本树 `kmod-mediatek_hnat` 会写
+`/etc/modules.d/20-mediatek_hnat` 开机自动加载，长连接几包后卸载到 PPE 硬件，
+后续数据包不再经过 netfilter —— 实测 800MB 下载，fwx 只数到开头几十 KB，
+流量统计/App 时长/审计几乎不动，被 offload 的连接也绕过应用过滤与黑名单。
+构建时用 `files/` overlay 覆盖该文件，**默认不加载 mtkhnat**（模块仍在，
+`modprobe mtkhnat` 可恢复满速转发）。这是「统计准 ⇄ 转发快」的取舍，
+默认选准确——这台机器的核心就是 DPI 审计。
+
 **构建期自检**（都排在编译之前，1 分钟内出结果）：
 
 | 脚本 | 作用 |
