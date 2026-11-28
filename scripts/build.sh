@@ -129,19 +129,6 @@ for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
 	cp -r "$FCM/package/fcm/$m" "$RJ/package/fcm/$m"
 done
 
-# 2b-1. 统一 UI：主题菜单 JS 用仓库版覆盖。
-#   vendor 版带简单/高级双模式（getMenuCategory/switchCategory/localStorage
-#   'luci-menu-category'）；仓库版（patches/theme/menu-fanchmwrt.js）已彻底
-#   移除模式分流，所有菜单常驻一套侧边栏，按业务顺序排列。
-#   2.0.0 及之前没有这一步，仓库里改了菜单但从未进固件 —— 本次补上。
-if [ -f "$ROOT/patches/theme/menu-fanchmwrt.js" ]; then
-	cp "$ROOT/patches/theme/menu-fanchmwrt.js" \
-		"$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js"
-	echo "  [+] 主题菜单 JS 已替换（统一 UI：无模式切换，单一侧边栏）"
-else
-	warn "patches/theme/menu-fanchmwrt.js 不存在 —— 固件将带 vendor 双模式菜单"
-fi
-
 for a in $APPS; do
 	rm -rf "$RJ/package/$a"
 	cp -r "$PKG/$a" "$RJ/package/$a"
