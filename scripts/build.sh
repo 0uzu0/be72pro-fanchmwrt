@@ -119,6 +119,14 @@ luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
 luci-app-fwx-accel luci-app-fwx-system luci-app-fwx-firewall"
 
 mkdir -p "$RJ/package/fcm"
+
+# 2a-3. 四类网络加速页（普通模式新增；仓库内维护，先于 APPS 循环拷入 ——
+#       accel 包不在 fanchmwrt-packages 里，APPS 循环从 $PKG 拷会 stat 失败
+#       （build-41/43 的失败根因））
+rm -rf "$RJ/package/fcm/luci-app-fwx-accel"
+cp -r "$ROOT/patches/accel/luci-app-fwx-accel" "$RJ/package/fcm/luci-app-fwx-accel"
+echo "  已放入 luci-app-fwx-accel（游戏/视频/下载/办公加速）"
+
 for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
 	rm -rf "$RJ/package/fcm/$m"
 	cp -r "$FCM/package/fcm/$m" "$RJ/package/fcm/$m"
@@ -140,10 +148,6 @@ mkdir -p "$RJ/package/kernel/fullconenat-nft"
 cp -r "$ROOT/patches/fullconenat-nft/." "$RJ/package/kernel/fullconenat-nft/"
 echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
 
-# 2a-3. 四类网络加速页（普通模式新增；仓库内维护）
-rm -rf "$RJ/package/fcm/luci-app-fwx-accel"
-cp -r "$ROOT/patches/accel/luci-app-fwx-accel" "$RJ/package/fcm/luci-app-fwx-accel"
-echo "  已放入 luci-app-fwx-accel（游戏/视频/下载/办公加速）"
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），
