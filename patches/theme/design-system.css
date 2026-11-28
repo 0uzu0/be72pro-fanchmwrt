@@ -562,3 +562,120 @@ textarea:focus {
 	.fwx-form-card .form-row { flex-direction: column; gap: 6px; }
 	.fwx-form-card .form-label { flex: none; width: auto; padding-top: 0; }
 }
+
+/* ==========================================================================
+ * 第三层：设计令牌与语义色
+ *
+ * 主题自带的强调色是绿色，而设计稿的强调色是蓝（#0a7cff）、危险色是红
+ * （#cf222e，淡底+彩字，不用实心红块）。实测截图里能看到两个后果：
+ *   · 登录页按钮是绿色，全站其余主操作是蓝色 —— 同一套界面两种强调色
+ *   · 终端列表每行一个红色实心「拉起」，一屏 12 个红块，盖过主操作
+ * 这里把语义色统一成设计稿的取值，组件按语义引用，不再散落硬编码。
+ * ========================================================================== */
+:root {
+	--ds-accent: #0a7cff;
+	--ds-accent-hover: #0068e0;
+	--ds-accent-soft: rgba(10, 124, 255, .12);
+	--ds-ok: #1a7f37;
+	--ds-ok-soft: rgba(26, 127, 55, .12);
+	--ds-bad: #cf222e;
+	--ds-bad-soft: rgba(207, 34, 46, .12);
+	--ds-warn: #9a6700;
+	--ds-warn-soft: rgba(154, 103, 0, .12);
+}
+
+/* ---------- 主操作按钮：统一蓝 ---------- */
+body .cbi-button-apply,
+body .cbi-button-save,
+body .cbi-button-positive,
+body .cbi-button-action,
+.fwx-form-card .submit-button,
+.modal-content .btn-primary,
+.btn.primary {
+	background: var(--ds-accent) !important;
+	border: 1px solid var(--ds-accent) !important;
+	color: #fff !important;
+	border-radius: 9px;
+	box-shadow: none;
+	transition: background-color 140ms ease, border-color 140ms ease;
+}
+body .cbi-button-apply:hover,
+body .cbi-button-save:hover,
+body .cbi-button-positive:hover,
+.fwx-form-card .submit-button:hover,
+.modal-content .btn-primary:hover,
+.btn.primary:hover {
+	background: var(--ds-accent-hover) !important;
+	border-color: var(--ds-accent-hover) !important;
+}
+
+/* ---------- 危险操作：淡底红字，悬停才实心 ----------
+ * 终端列表/规则列表里这类按钮是每行一个，实心红块会让整屏没有主次。
+ * 它们的颜色是写在 style="" 上的（background:#ef4444），必须 !important 才能压过。 */
+.fwx-form-card .delete-btn,
+.fwx-form-card .btn-delete,
+.user-status-content .delete-btn,
+.user-status-content .btn-delete,
+.modal-content .btn-delete,
+body .cbi-button-remove,
+body .cbi-button-negative {
+	background: var(--ds-bad-soft) !important;
+	border: 1px solid transparent !important;
+	color: var(--ds-bad) !important;
+	border-radius: 9px !important;
+	box-shadow: none !important;
+	height: 30px !important;
+	line-height: 28px !important;
+	padding: 0 12px !important;
+	font-size: 12px !important;
+	font-weight: 500 !important;
+	transition: background-color 140ms ease, color 140ms ease;
+}
+.fwx-form-card .delete-btn:hover,
+.fwx-form-card .btn-delete:hover,
+.user-status-content .delete-btn:hover,
+.user-status-content .btn-delete:hover,
+.modal-content .btn-delete:hover,
+body .cbi-button-remove:hover,
+body .cbi-button-negative:hover {
+	background: var(--ds-bad) !important;
+	color: #fff !important;
+}
+
+/* ---------- 表格表头：与数据行分开 ----------
+ * 截图里表头和数据行几乎同色，一眼看不出哪行是标题。 */
+.fwx-form-card table thead th,
+.dash table thead th,
+.user-status-content table thead th {
+	background: var(--background-color-low, #f3f4f6) !important;
+	color: var(--text-color-medium, #6b7280) !important;
+	font-weight: 600 !important;
+	border-bottom: 1px solid var(--border-color, #e5e7eb) !important;
+}
+
+/* ---------- 空状态：不要占满整屏 ----------
+ * 「未配置规则」这类空状态被容器拉满，看起来像页面没加载完。 */
+.empty-state {
+	min-height: 0;
+	height: auto;
+	padding: 56px 24px;
+	color: var(--text-color-medium, #9aa3af);
+	font-size: 13px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* ---------- 表单校验提示：不压住下一行 ----------
+ * 截图里「基础数据目录 不能为空！」压在「应用有效时长」下拉框上。
+ * 给字段容器建立定位上下文，提示就跟着字段走，不再漂到别处。 */
+.fwx-form-card .form-group { position: relative; }
+.fwx-form-card .form-group .form-desc,
+.fwx-form-card .form-group .error-msg,
+.fwx-form-card .form-group .tooltip-row {
+	position: static;
+	display: block;
+	margin-top: 4px;
+	line-height: 1.5;
+}
+.fwx-form-card .form-group .error-msg { color: var(--ds-bad); font-size: 12px; }
