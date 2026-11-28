@@ -118,7 +118,7 @@ std = set(("if while for switch sizeof return main static void int char long uns
            "strchr strrchr strlen strcpy strncpy strcat memset memcpy malloc calloc realloc "
            "free sscanf atoi atol strtoul strtol exit NULL EOF feof ferror fflush fileno "
            "fsync memmove rename chmod isxdigit tolower atoi calloc access unlink getpid "
-           "INT_MIN INT_MAX F_OK isspace isdigit isupper strtoll memset_s strtok").split())
+           "INT_MIN INT_MAX F_OK isspace isdigit isupper strtoll memset_s strtok qsort").split())
 tree_src = ""
 for _root, _dirs, _files in os.walk(RJ + "/package/fcm/fwxd/src"):
     for _f in _files:
@@ -129,6 +129,30 @@ miss = [c for c in sorted(calls)
         if c not in own and c not in std
         and not _re.search(r'\b' + _re.escape(c) + r'\s*\(', tree_src)]
 check(not miss, "移植文件符号全部可解析: " + str(miss))
+
+# 声明-调用顺序：跨文件函数必须在首个调用前有声明（build-54 的
+# app_icon_exists_by_id 教训：有定义但调用处无声明 -> implicit declaration）
+order_bad = []
+lines = src.splitlines()
+def _first(pattern):
+    for i, ln in enumerate(lines, 1):
+        if _re.search(pattern, ln):
+            return i
+    return 10**9
+for c in sorted(calls):
+    if c in own or c in std:
+        continue
+    # 库函数 / 日志宏 / 函数指针参数：在头文件或宏里声明，不参与顺序检查
+    if c.startswith(("json_", "LOG_", "nl_", "uci_", "blob", "fwx_nl_")) or c == "send_feature":
+        continue
+    if _re.search(r'^\s*(?:static\s+)?[A-Za-z_][\w\s\*]*?\b' + _re.escape(c) + r'\s*\([^;]*$',
+                  src, _re.M):
+        continue          # 文件内定义的 static 函数，定义行本身满足
+    decl_line = _first(r'(?:extern\s+)?[A-Za-z_][\w\s\*]*\b' + _re.escape(c) + r'\s*\([^;]*;\s*$')
+    call_line = _first(r'\b' + _re.escape(c) + r'\s*\(')
+    if call_line < decl_line:
+        order_bad.append("%s(调用%d行 声明%d行)" % (c, call_line, decl_line))
+check(not order_bad, "跨文件函数声明早于调用: " + str(order_bad))
 
 # ===== REQUIRED_SYMS 对齐 =====
 step("REQUIRED_SYMS 与树内包对齐")

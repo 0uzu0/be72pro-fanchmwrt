@@ -1,21 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "fwx_custom_feature.h"
 
-/* ---- be72: 24.10.4 无 trim_space（25.12 fwx_config.c 才有），本文件大量使用 —— 顶部补实现 ---- */
-static char *trim_space(char *s)
-{
-    char *end;
-    if (!s)
-        return s;
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-        s++;
-    end = s + strlen(s);
-    while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
-        end--;
-    *end = '\0';
-    return s;
-}
-
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -28,6 +13,9 @@ static char *trim_space(char *s)
 
 #include "fwx.h"
 #include "fwx_config.h"
+
+/* be72: 实现在 fwx_ext_compat.c（24.10.4 fwxd 没有，25.12 在 fwx_config.c） */
+extern int app_icon_exists_by_id(int id);
 
 #define CUSTOM_FALLBACK_CLASS_COUNT 5
 #define CUSTOM_APP_MIN_SUFFIX 900
