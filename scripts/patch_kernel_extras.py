@@ -500,14 +500,16 @@ int fwx_accel_test(int app_id)
 	return (fwx_accel_bitmap[app_id >> 3] & (1u << (app_id & 7))) != 0;
 }
 """
-ACCEL_SYSCTL_ANCHOR = """		.procname	= "tcp_rst","""
-ACCEL_SYSCTL_ADD = """		{
-			.procname	= "accel_ids",
-			.data		= &fwx_accel_ids,
-			.maxlen		= sizeof(fwx_accel_ids) - 1,
-			.mode		= 0644,
-			.proc_handler	= fwx_accel_ids_handler,
-		},
+ACCEL_SYSCTL_ANCHOR = """	{
+		.procname	= "tcp_rst","""
+ACCEL_SYSCTL_ADD = """	{
+		.procname	= "accel_ids",
+		.data		= &fwx_accel_ids,
+		.maxlen		= sizeof(fwx_accel_ids) - 1,
+		.mode		= 0644,
+		.proc_handler	= fwx_accel_ids_handler,
+	},
+	{
 		.procname	= "tcp_rst","""
 ACCEL_MARK = "be72: 四类网络加速"
 ACCEL_HOOK_ANCHOR = """		app_id = ct->fwx_data.app_id;"""
