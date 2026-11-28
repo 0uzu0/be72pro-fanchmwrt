@@ -208,6 +208,11 @@ cp -f "$ROOT/patches/appfilter/rules.htm" \
 	"$RJ/package/luci-app-fwx-appfilter/luasrc/view/appfilter/rules.htm"
 echo "  黑名单 / MAC 过滤 / 应用过滤已替换"
 
+# 2a-10. 系统设置（设计稿 #v-system：系统信息 + 主题模式）
+cp -f "$ROOT/patches/system/system.htm" \
+	"$RJ/package/luci-app-fwx-system/luasrc/view/fwx_system/system.htm"
+echo "  系统设置页已替换（真实系统信息 + 主题模式）"
+
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），
