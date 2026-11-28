@@ -2075,3 +2075,44 @@ struct json_object *fwx_api_get_feature_info(struct json_object *req_obj) {
     json_object_put(data_obj);
     return resp;
 }
+
+/* ---- be72: 25.12 fwx_config.c 的四个函数在 24.10.4 不存在，fwx_custom_feature.c
+     （25.12 移植）只带 extern 声明 —— 链接期 undefined reference（build-53）。 ---- */
+#include "fwx_config.h"
+
+int get_base_app_count(void)
+{
+    /* 官方特征条数：运行时读内核计数（24.10.4 无 g_base_app_count 全局） */
+    FILE *fp = fopen("/proc/sys/fwx/feature_count", "r");
+    int n = 0;
+    if (fp) {
+        if (fscanf(fp, "%d", &n) != 1)
+            n = 0;
+        fclose(fp);
+    }
+    return n;
+}
+
+int app_icon_exists_by_id(int id)
+{
+    /* 24.10.4 没有 app_icons 图标目录：恒返回 1（存在），页面不再输出 icon:0 */
+    (void)id;
+    return 1;
+}
+
+int add_app_name_to_table(int id, const char *name)
+{
+    /* 对接 24.10.4 fwxd 的全局名称表（fwx_config.c 的同名非 static 全局），
+       自定义特征的 App 名称由此进入 get_app_name_by_id 的查询范围 */
+    extern app_name_info_t app_name_table[MAX_SUPPORT_APP_NUM];
+    extern int g_app_count;
+
+    if (!name || !name[0] || g_app_count >= MAX_SUPPORT_APP_NUM)
+        return -1;
+    app_name_table[g_app_count].id = id;
+    strncpy(app_name_table[g_app_count].name, name,
+            sizeof(app_name_table[g_app_count].name) - 1);
+    app_name_table[g_app_count].name[sizeof(app_name_table[g_app_count].name) - 1] = '\0';
+    g_app_count++;
+    return 0;
+}

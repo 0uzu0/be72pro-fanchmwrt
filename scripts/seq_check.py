@@ -105,6 +105,31 @@ r = subprocess.run([sys.executable, "scripts/patch_kernel_extras.py", "--hnat", 
                    capture_output=True, text=True)
 check("Traceback" not in r.stderr, "--hnat 单参调用无异常")
 
+# ===== 移植文件的全符号依赖检查（build-53 教训：app_icon_exists_by_id）=====
+step("移植文件全符号依赖（fwx_custom_feature.c vs 树内定义）")
+import re as _re
+fwx_cf = RJ + "/package/fcm/fwxd/src/fwx_custom_feature.c"
+src = open(fwx_cf, encoding="utf-8", errors="surrogateescape").read()
+calls = set(_re.findall(r'\b([a-zA-Z_]\w*)\s*\(', src))
+own = set(_re.findall(r'^\s*(?:static\s+)?[A-Za-z_][\w\s\*]*?\b(\w+)\s*\([^;]*$', src, _re.M))
+own |= set(_re.findall(r'extern\s+[A-Za-z_][\w\s\*]*\b(\w+)\s*\(', src))
+std = set(("if while for switch sizeof return main static void int char long unsigned "
+           "FILE fopen fclose fgets fputs fprintf snprintf sprintf strncmp strcmp strstr "
+           "strchr strrchr strlen strcpy strncpy strcat memset memcpy malloc calloc realloc "
+           "free sscanf atoi atol strtoul strtol exit NULL EOF feof ferror fflush fileno "
+           "fsync memmove rename chmod isxdigit tolower atoi calloc access unlink getpid "
+           "INT_MIN INT_MAX F_OK isspace isdigit isupper strtoll memset_s strtok").split())
+tree_src = ""
+for _root, _dirs, _files in os.walk(RJ + "/package/fcm/fwxd/src"):
+    for _f in _files:
+        if _f.endswith((".c", ".h")):
+            tree_src += open(os.path.join(_root, _f), encoding="utf-8",
+                             errors="surrogateescape").read()
+miss = [c for c in sorted(calls)
+        if c not in own and c not in std
+        and not _re.search(r'\b' + _re.escape(c) + r'\s*\(', tree_src)]
+check(not miss, "移植文件符号全部可解析: " + str(miss))
+
 # ===== REQUIRED_SYMS 对齐 =====
 step("REQUIRED_SYMS 与树内包对齐")
 for sym in ["system", "firewall", "feature", "dashboard", "user", "appfilter",

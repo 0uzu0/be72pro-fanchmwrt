@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "fwx_custom_feature.h"
 
+/* ---- be72: 24.10.4 无 trim_space（25.12 fwx_config.c 才有），本文件大量使用 —— 顶部补实现 ---- */
+static char *trim_space(char *s)
+{
+    char *end;
+    if (!s)
+        return s;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+        s++;
+    end = s + strlen(s);
+    while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
+        end--;
+    *end = '\0';
+    return s;
+}
+
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
