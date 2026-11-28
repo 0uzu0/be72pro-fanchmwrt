@@ -141,6 +141,116 @@ def die(msg):
     sys.exit(2)
 
 
+# ---------------------------------------------------------------- batch 2
+# 网口状态不显示：25.12 页面读 network_status.port_status，24.10.4 没这个字段。
+# 审计目录无默认：页面读 base_data_path / terminal_data_path，24.10.4 不返回。
+RB_ANCHOR = """    json_object_object_add(data_obj, "history_data_size", json_object_new_string(history_data_size));
+    json_object_object_add(data_obj, "history_data_path", json_object_new_string(history_data_path));"""
+RB_INSERT = RB_ANCHOR + """
+    /* be72: 页面需要 base_data_path（基础数据目录）；24.10.4 不返回，导致输入框为空。
+       uci 没配时给默认值 /tmp/fwx —— 与 history_data_path 一致，避免两处目录分离。 */
+    {
+        char base_data_path[256] = {0};
+        struct uci_context *bctx = uci_alloc_context();
+        if (bctx) {
+            fwx_uci_get_value(bctx, "fwx.record.base_data_path", base_data_path, sizeof(base_data_path));
+            uci_free_context(bctx);
+        }
+        if (base_data_path[0] == 0)
+            snprintf(base_data_path, sizeof(base_data_path), "/tmp/fwx");
+        json_object_object_add(data_obj, "base_data_path", json_object_new_string(base_data_path));
+        json_object_object_add(data_obj, "terminal_data_path", json_object_new_string(base_data_path));
+    }"""
+DS_ANCHOR = """    json_object_object_add(network_status, "wan", wan_obj);"""
+DS_INSERT = DS_ANCHOR + """
+    /* be72: 网口状态（仪表盘 port-status 卡片）。读 /sys/class/net 实时状态，
+       WAN 的判定：pppoe-wan / eth2.1（uci 的 wan 设备） */
+    {
+        static const char *be72_ports[] = {"lan1", "lan2", "lan3", "lan4",
+                                           "eth2.2", "eth1", "eth2.1", "pppoe-wan", NULL};
+        struct json_object *port_array = json_object_new_array();
+        int bi;
+        for (bi = 0; be72_ports[bi]; bi++) {
+            const char *nm = be72_ports[bi];
+            char ppath[160];
+            struct json_object *po = json_object_new_object();
+            FILE *pf;
+            int up = 0, speed = 0;
+            const char *role = (strstr(nm, "wan") != NULL) ? "wan" : "lan";
+            snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/operstate", nm);
+            pf = fopen(ppath, "r");
+            if (pf) {
+                char st[32] = {0};
+                if (fgets(st, sizeof(st), pf) && strncmp(st, "up", 2) == 0)
+                    up = 1;
+                fclose(pf);
+            }
+            /* PPPoE 虚口的 operstate 常为 unknown：有收发包即视为在线 */
+            if (!up && strcmp(nm, "pppoe-wan") == 0) {
+                snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/statistics/rx_bytes", nm);
+                pf = fopen(ppath, "r");
+                if (pf) {
+                    unsigned long long rb = 0;
+                    if (fscanf(pf, "%llu", &rb) == 1 && rb > 0)
+                        up = 1;
+                    fclose(pf);
+                }
+            }
+            snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/speed", nm);
+            pf = fopen(ppath, "r");
+            if (pf) {
+                if (fscanf(pf, "%d", &speed) != 1)
+                    speed = 0;
+                fclose(pf);
+            }
+            json_object_object_add(po, "name", json_object_new_string(nm));
+            json_object_object_add(po, "role", json_object_new_string(role));
+            json_object_object_add(po, "up", json_object_new_int(up));
+            json_object_object_add(po, "speed", json_object_new_int(speed));
+            json_object_object_add(po, "duplex", json_object_new_string("full"));
+            json_object_array_add(port_array, po);
+        }
+        json_object_object_add(network_status, "port_status", port_array);
+    }"""
+RB_MARK = "be72: 页面需要 base_data_path"
+DS_MARK = "be72: 网口状态（仪表盘 port-status 卡片）"
+
+
+def apply_batch2(uc_path):
+    with open(uc_path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        src = f.read()
+    todo = []
+    if RB_MARK not in src:
+        if s_count(src, RB_ANCHOR) != 1:
+            print("  [!] record_base 锚点不唯一或缺失，未补 base_data_path")
+        else:
+            src = src.replace(RB_ANCHOR, RB_INSERT, 1)
+            todo.append("base_data_path")
+            with open(uc_path, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(src)
+    if DS_MARK not in src:
+        if s_count(src, DS_ANCHOR) != 1:
+            print("  [!] dashboard 锚点不唯一或缺失，未补 port_status")
+        else:
+            src = src.replace(DS_ANCHOR, DS_INSERT, 1)
+            todo.append("port_status")
+            with open(uc_path, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(src)
+    if not todo:
+        print("  [skip] batch2 已是目标状态")
+        return 0
+    with open(uc_path, "w", encoding="utf-8", errors="surrogateescape") as f:
+        f.write(src)
+    with open(uc_path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        chk = f.read()
+    ok = (RB_MARK in chk if "base_data_path" in todo else True) and          (DS_MARK in chk if "port_status" in todo else True)
+    print("  [+] batch2: %s" % ",".join(todo) if ok else "  [!] batch2 写入校验失败")
+    return 0 if ok else 2
+
+
+def s_count(src, needle):
+    return src.count(needle)
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__.strip())
@@ -219,6 +329,9 @@ def main():
     if changed:
         with open(ubus, "w", encoding="utf-8", errors="surrogateescape") as f:
             f.write(text)
+
+    # ---------- 2b. batch2：base_data_path + 网口状态 ----------
+    apply_batch2(ubus)
 
     # ---------- 3. fwx_user.c：写入侧过滤 ----------
     user = os.path.join(tree, USER_REL)
