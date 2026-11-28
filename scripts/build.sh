@@ -123,9 +123,20 @@ mkdir -p "$RJ/package/fcm"
 # 2a-3. 四类网络加速页（普通模式新增；仓库内维护，独立拷贝。
 #       注意：accel 不在 fanchmwrt-packages 里，【绝不能】加进 APPS 变量
 #       —— APPS 循环从 $PKG 逐个拷贝，会把 build-41/43/44 的 cp 失败重演）
-rm -rf "$RJ/package/fcm/luci-app-fwx-accel"
-cp -r "$ROOT/patches/accel/luci-app-fwx-accel" "$RJ/package/fcm/luci-app-fwx-accel"
-echo "  已放入 luci-app-fwx-accel（游戏/视频/下载/办公加速）"
+# 加速页并入 luci-app-fwx-system 包（controller/view 同包多文件，LuCI 原生支持）。
+# 不做成独立包：build-45/46 实测独立包在 package metadata 里被静默跳过
+# （tmp/.config-package.in 无该符号段 -> Kconfig 关成 n），根因未明，
+# 并入已识别的包是 100% 可靠的做法。
+mkdir -p "$RJ/package/fcm/luci-app-fwx-system/luasrc/view/fwx_accel"
+cp -f "$ROOT/patches/accel/fwx_accel.lua" "$RJ/package/fcm/luci-app-fwx-system/luasrc/controller/fwx_accel.lua"
+cp -f "$ROOT/patches/accel/accel.htm" "$RJ/package/fcm/luci-app-fwx-system/luasrc/view/fwx_accel/accel.htm"
+echo "  加速页已并入 luci-app-fwx-system（游戏/视频/下载/办公加速）"
+
+# 加速页进普通模式菜单：主题 JS 的 basicMenus 按 9 个菜单名过滤，
+# 把 fwx_accel 加进列表（否则普通模式侧边栏看不到加速入口）
+sed -i "s/'fwx_user_record',/'fwx_user_record',\n\t\t\t'fwx_accel',/" \
+	"$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js" && \
+	echo "  加速页已加入普通模式菜单"
 
 for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
 	rm -rf "$RJ/package/fcm/$m"
@@ -366,7 +377,6 @@ REQUIRED_SYMS=(
 	CONFIG_PACKAGE_luci-app-fwx-session-stat
 	CONFIG_PACKAGE_luci-app-fwx-traffic-stat
 	CONFIG_PACKAGE_luci-app-fwx-feature
-	CONFIG_PACKAGE_luci-app-fwx-accel
 	CONFIG_PACKAGE_luci-app-fwx-system
 	CONFIG_PACKAGE_luci-app-fwx-firewall
 	CONFIG_PACKAGE_kmod-nft-fullcone
