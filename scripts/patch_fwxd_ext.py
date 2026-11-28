@@ -285,6 +285,42 @@ def apply_main_custom(main_path):
     return 0
 
 
+# ---------------------------------------------------------------- batch5: hostname 兜底
+# client->hostname 由 update_client_list 维护，实测常为空（leases 里有主机名却没进 client）。
+# 输出时兜底：为空调 get_hostname_by_mac 现查 /tmp/dhcp.leases，并过滤 "*"
+#（leases 里未上报主机名的设备占位符）。
+HOST_ANCHOR = """    if (flag > 1){
+        json_object_object_add(user_obj, "hostname", json_object_new_string(client->hostname));"""
+HOST_INSERT = """    if (flag > 1){
+        /* be72: client->hostname 维护链路不稳定（实测常为空），兜底现查
+           /tmp/dhcp.leases；"*" 是 DHCP 未上报主机名的占位符，视为空。 */
+        {
+            char hostname_buf[MAX_HOSTNAME_SIZE] = {0};
+            if (client->hostname[0] == 0)
+                get_hostname_by_mac(client->mac, hostname_buf);
+            const char *hostname_out = (hostname_buf[0] != 0 && strcmp(hostname_buf, "*") != 0)
+                                           ? hostname_buf : client->hostname;
+            json_object_object_add(user_obj, "hostname", json_object_new_string(hostname_out));
+        }"""
+HOST_MARK = "be72: client->hostname 维护链路不稳定"
+
+
+def apply_host_fallback(ubus_path):
+    with open(ubus_path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        src = f.read()
+    if HOST_MARK in src:
+        print("  [skip] hostname 兜底已是目标状态")
+        return 0
+    if src.count(HOST_ANCHOR) != 1:
+        print("  [!] hostname 兜底锚点出现 %d 次，跳过" % src.count(HOST_ANCHOR))
+        return 2
+    src = src.replace(HOST_ANCHOR, HOST_INSERT, 1)
+    with open(ubus_path, "w", encoding="utf-8", errors="surrogateescape") as f:
+        f.write(src)
+    print("  [+] get_all_users：hostname 兜底现查 dhcp.leases")
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__.strip())
@@ -367,6 +403,7 @@ def main():
     # ---------- 2b. batch2：base_data_path + 网口状态 ----------
     apply_batch2(ubus)
     apply_main_custom(os.path.join(tree, FWXD_TOP_REL, "src", "main.c"))
+    apply_host_fallback(ubus)
 
     # ---------- 3. fwx_user.c：写入侧过滤 ----------
     user = os.path.join(tree, USER_REL)
