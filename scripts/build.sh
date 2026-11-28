@@ -17,7 +17,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 WORKDIR="${WORKDIR:-$PWD/work}"
 WITH_KMOD="${WITH_KMOD:-1}"
 STYLE_CARDS="${STYLE_CARDS:-1}"
-STYLE_FWX="${STYLE_FWX:-0}"
+STYLE_FWX="${STYLE_FWX:-1}"
 JOBS="${JOBS:-$(nproc)}"
 
 RJ_REPO="https://github.com/RuijieNetworksCommunity/MT798X-6.6-24.10.git"

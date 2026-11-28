@@ -679,3 +679,83 @@ body .cbi-button-negative:hover {
 	line-height: 1.5;
 }
 .fwx-form-card .form-group .error-msg { color: var(--ds-bad); font-size: 12px; }
+
+/* ============================================================
+ * be72 v2.1.1 设计稿令牌层（对照 docs/ui-redesign.html）
+ * 浅色/深色双套，跟随 [data-darkmode]；只调视觉（色/圆角/字号），不动布局。
+ * ============================================================ */
+:root {
+	--ds-bg: #f6f8fa;
+	--ds-panel: #ffffff;
+	--ds-panel2: #f6f8fa;
+	--ds-line: rgba(31, 35, 40, .10);
+	--ds-line2: rgba(31, 35, 40, .16);
+	--ds-text: #1f2328;
+	--ds-text2: #59636e;
+	--ds-text3: #818b98;
+	--ds-r-lg: 16px;
+	--ds-r-md: 12px;
+	--ds-r-sm: 9px;
+}
+
+[data-darkmode="true"] {
+	--ds-bg: #0d1117;
+	--ds-panel: #151d2b;
+	--ds-panel2: #1a2433;
+	--ds-line: rgba(255, 255, 255, .07);
+	--ds-line2: rgba(255, 255, 255, .12);
+	--ds-text: #e6edf3;
+	--ds-text2: #9da7b3;
+	--ds-text3: #6b7684;
+}
+
+/* 卡片：设计稿 .card（16px 圆角 / 17×19 内边距 / 细边框 / panel 底色） */
+.cbi-section,
+.fwx-form-card,
+.dash .card,
+.mini {
+	border-radius: var(--ds-r-lg) !important;
+	border: 1px solid var(--ds-line) !important;
+	background: var(--ds-panel) !important;
+}
+
+.cbi-section,
+.fwx-form-card,
+.dash .card {
+	padding: 17px 19px !important;
+}
+
+/* 标题层级：设计稿 12.5px / 500 次色 */
+.cbi-section legend,
+.fwx-form-card .form-title,
+.dash .card h3 {
+	font-size: 12.5px !important;
+	font-weight: 500 !important;
+	color: var(--ds-text2) !important;
+}
+
+/* 输入框 / 选择框 / 按钮：8-10px 圆角 */
+.cbi-input-text,
+.cbi-input-password,
+.cbi-select,
+.cbi-file,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+	border-radius: var(--ds-r-sm) !important;
+}
+
+.cbi-button,
+.btn,
+button.cbi-button {
+	border-radius: 8px !important;
+}
+
+/* 表格：设计稿细线 + panel2 表头 */
+.cbi-section-table .cbi-section-table-titles,
+.cbi-section-table .tr.table-titles {
+	background: var(--ds-panel2) !important;
+	border-radius: var(--ds-r-md) !important;
+}
