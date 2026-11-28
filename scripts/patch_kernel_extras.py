@@ -76,6 +76,24 @@ FWX_ANCHOR = (
 FWX_MOD_MARK = "fwx-flush-mod"
 FWX_MOD_ANCHOR = "\n\treturn 0;\n}\n\nint fwx_api_del_mac_filter_rule(cJSON *data_obj) {"
 
+# 空 MAC 列表的匹配语义：上游把"空列表"当成"匹配所有设备"（101 除外），
+# 我们新增的 102（设备黑名单）空列表时会把全部转发流量丢掉并发 RST。
+FWX_EMPTY_MARK = "rule->rule_id == 102"
+FWX_EMPTY_ANCHOR = (
+    "\t\tif (mac_list_empty) {\n"
+    "\n"
+    "\t\t\tif (rule->rule_id == 101) {\n"
+)
+FWX_EMPTY_FIX = (
+    "\t\tif (mac_list_empty) {\n"
+    "\n"
+    "\t\t\t/* 101（单设备规则聚合）与 102（设备黑名单）的空列表一律不匹配：\n"
+    "\t\t\t * 空列表意味着\"还没拉黑任何设备\"。若沿用上游语义（空 = 匹配所有），\n"
+    "\t\t\t * 规则 102 一建出来就会丢掉全部转发流量并发 TCP RST ——\n"
+    "\t\t\t * 表现为\"能拨号、能开管理页、但局域网所有设备上不了网\"。 */\n"
+    "\t\t\tif (rule->rule_id == 101 || " + FWX_EMPTY_MARK + ") {\n"
+)
+
 FWX_MOD_INSERT = """\t/* fwx-flush-mod: 规则变更后清掉相关终端的 PPE 表项，让拦截立即生效。
 \t * 单独再取一次 mac_list，避免依赖上面那段里可能未初始化的 mac_array。
 \t */
@@ -240,13 +258,26 @@ def apply_fwx(root):
         src = src.replace(FWX_MOD_ANCHOR, FWX_MOD_INSERT + FWX_MOD_ANCHOR, 1)
         todo.append("mod")
 
+    # 4) 空 MAC 列表的匹配语义（关键 bug 修复）
+    #    上游：mac_list_empty 时，只有 101 跳过，其它 rule_id 一律 return rule
+    #    —— 等于"空列表 = 匹配所有设备"。我们新建的黑名单规则 102 在还没拉黑任何
+    #    设备时列表就是空的，于是每台设备的转发流量都被丢、还发 RST（拨号与
+    #    LuCI 不受影响，因为一个走 WAN 侧、一个走 input 链）。
+    #    修法：102 也按"空列表 = 不匹配"处理，与 101 一致；其它 id 保留上游语义。
+    if FWX_EMPTY_MARK not in src:
+        if FWX_EMPTY_ANCHOR not in src:
+            print("  [!] 空列表匹配语义的锚点未命中，未修复（黑名单会误杀全部流量）")
+            return 2
+        src = src.replace(FWX_EMPTY_ANCHOR, FWX_EMPTY_FIX, 1)
+        todo.append("empty-list")
+
     if not todo:
         print("  [skip] fwx_mac_filter 已是目标状态")
         return 0
 
     write(path, src)
     chk = read(path)
-    ok = (STAMP_FWX in chk) and (FWX_MOD_MARK in chk)
+    ok = (STAMP_FWX in chk) and (FWX_MOD_MARK in chk) and (FWX_EMPTY_MARK in chk)
     print("  [+] fwx: 清表调用已插入 (%s)" % ",".join(todo) if ok else "  [!] fwx 写入校验失败")
     return 0 if ok else 2
 
