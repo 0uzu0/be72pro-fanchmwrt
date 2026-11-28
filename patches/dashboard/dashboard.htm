@@ -1,0 +1,334 @@
+<%#
+ 仪表盘 1:1（设计基准 docs/ui-redesign.html #v-dash）
+ 数据全部真实：get_dashboard_common / get_daily_top_users / get_active_users
+   + network.device status（接口速率两次采样）
+ 字段映射见 docs/dashboard-data-map.md
+-%>
+<%+header%>
+
+<%
+	local uci = require "luci.model.uci".cursor()
+	local wan_proto = uci:get("network", "wan", "proto") or "dhcp"
+	local proto_label = ({ pppoe = "PPPoE", dhcp = "DHCP", static = "静态 IP", none = "无" })[wan_proto] or wan_proto
+%>
+
+<div class="fwx-dash">
+	<div class="ds-grid ds-g4">
+		<div class="ds-card">
+			<div class="kpi-label">CPU 占用</div>
+			<div class="kpi"><span id="kpi-cpu">--</span><small>%</small></div>
+			<div class="sub-text"><span id="kpi-cpu-sub">加载中…</span></div>
+		</div>
+		<div class="ds-card">
+			<div class="kpi-label">内存占用</div>
+			<div class="kpi"><span id="kpi-mem">--</span><small>%</small></div>
+			<div class="sub-text"><span id="kpi-mem-sub">加载中…</span></div>
+		</div>
+		<div class="ds-card">
+			<div class="kpi-label">在线终端</div>
+			<div class="kpi"><span id="kpi-clients">--</span><small>台</small></div>
+			<div class="sub-text"><span id="kpi-clients-sub">加载中…</span></div>
+		</div>
+		<div class="ds-card">
+			<div class="kpi-label">运行时长</div>
+			<div class="kpi kpi-sm" id="kpi-uptime">--</div>
+			<div class="sub-text"><span id="kpi-uptime-sub">加载中…</span></div>
+		</div>
+	</div>
+
+	<div class="ds-col2">
+		<div class="ds-card">
+			<h3>接口流量 <span class="ds-tag ds-tag-mute" id="ifrate-note">实时</span></h3>
+			<div class="bars" id="ifrate-bars">
+				<div class="sub-text">加载中…</div>
+			</div>
+		</div>
+		<div class="ds-card">
+			<h3>网络状态</h3>
+			<div class="kv"><span>WAN IP</span><span id="net-wan-ip">--</span></div>
+			<div class="kv"><span>WAN 状态</span><span id="net-wan-state" class="ds-tag ds-tag-mute">--</span></div>
+			<div class="kv"><span>连接方式</span><span><%=proto_label%></span></div>
+			<div class="kv"><span>DNS</span><span id="net-dns">--</span></div>
+			<div class="kv"><span>工作模式</span><span id="net-mode">--</span></div>
+			<div class="kv"><span>当前流量</span><span id="net-flow">--</span></div>
+			<div class="port-line" id="port-line"></div>
+		</div>
+	</div>
+
+	<div class="ds-col2">
+		<div class="ds-card">
+			<h3>活跃应用 <a class="more" href="<%=url("admin/fwx_parental_control/appfilter")%>">去管控</a></h3>
+			<div class="dev-list" id="app-list"><div class="sub-text">加载中…</div></div>
+			<div class="ds-hint">实时连接（应用名 / 所属设备 / 当前域名）</div>
+		</div>
+		<div class="ds-card">
+			<h3>活跃主机 <a class="more" href="<%=url("admin/fwx_user/list")%>">终端列表</a></h3>
+			<div class="dev-list" id="host-list"><div class="sub-text">加载中…</div></div>
+			<div class="ds-hint">今日流量（↑ 上传 / ↓ 下载）</div>
+		</div>
+	</div>
+</div>
+
+<style>
+.fwx-dash { max-width: 1400px; }
+.fwx-dash .ds-grid { display: grid; gap: 13px; margin-bottom: 13px; }
+.fwx-dash .ds-g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fwx-dash .ds-col2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-bottom: 13px; }
+.fwx-dash .ds-card {
+	background: var(--ds-panel, #fff);
+	border: 1px solid var(--ds-line, rgba(31,35,40,.1));
+	border-radius: var(--ds-r-lg, 16px);
+	padding: 17px 19px;
+	min-width: 0;
+}
+.fwx-dash .ds-card h3 {
+	font-size: 12.5px; font-weight: 500; color: var(--ds-text2, #59636e);
+	margin: 0 0 13px; display: flex; align-items: center; gap: 8px;
+}
+.fwx-dash .ds-card h3 .more { margin-left: auto; font-size: 11.5px; color: var(--ds-accent, #0a7cff); text-decoration: none; font-weight: 400; }
+.fwx-dash .kpi-label { font-size: 11.5px; color: var(--ds-text2, #59636e); margin-bottom: 9px; }
+.fwx-dash .kpi { font-size: 25px; font-weight: 500; color: var(--ds-text, #1f2328); line-height: 1.15; }
+.fwx-dash .kpi small { font-size: 11.5px; color: var(--ds-text2, #59636e); margin-left: 3px; font-weight: 400; }
+.fwx-dash .kpi-sm { font-size: 19px; }
+.fwx-dash .sub-text { font-size: 11px; color: var(--ds-text3, #818b98); margin-top: 6px; }
+.fwx-dash .bars { display: flex; flex-direction: column; gap: 11px; }
+.fwx-dash .bar-row { display: grid; grid-template-columns: 88px 1fr auto; align-items: center; gap: 10px; }
+.fwx-dash .bar-row .nm { font-size: 12px; color: var(--ds-text2, #59636e); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fwx-dash .track { height: 7px; background: var(--ds-panel2, #f6f8fa); border-radius: 99px; overflow: hidden; }
+.fwx-dash .fill { height: 100%; border-radius: 99px; background: var(--ds-accent, #0a7cff); transition: width .5s ease; }
+.fwx-dash .bar-row .val { font-size: 11.5px; color: var(--ds-text2, #59636e); white-space: nowrap; }
+.fwx-dash .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 5px 0; color: var(--ds-text, #1f2328); }
+.fwx-dash .kv > span:first-child { color: var(--ds-text2, #59636e); }
+.fwx-dash .ds-tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; }
+.fwx-dash .ds-tag-green { background: rgba(63,185,80,.12); color: #2f9e44; }
+.fwx-dash .ds-tag-red { background: rgba(248,81,73,.12); color: #d33; }
+.fwx-dash .ds-tag-mute { background: var(--ds-panel2, #f6f8fa); color: var(--ds-text2, #59636e); }
+.fwx-dash .port-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.fwx-dash .port-chip { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--ds-line, rgba(31,35,40,.1)); color: var(--ds-text3, #818b98); }
+.fwx-dash .port-chip.up { color: #2f9e44; border-color: rgba(63,185,80,.35); }
+.fwx-dash .dev-list { display: flex; flex-direction: column; gap: 9px; }
+.fwx-dash .dev-row { display: flex; align-items: center; gap: 10px; }
+.fwx-dash .dev-ico { width: 30px; height: 30px; border-radius: 9px; background: var(--ds-panel2, #f6f8fa); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--ds-text2, #59636e); flex-shrink: 0; }
+.fwx-dash .dev-main { min-width: 0; flex: 1; }
+.fwx-dash .dev-main .nm { font-size: 12.5px; color: var(--ds-text, #1f2328); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fwx-dash .dev-main .meta { font-size: 11px; color: var(--ds-text3, #818b98); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fwx-dash .dev-traffic { font-size: 11.5px; color: var(--ds-text2, #59636e); white-space: nowrap; text-align: right; }
+.fwx-dash .dev-traffic small { display: block; font-size: 10.5px; color: var(--ds-text3, #818b98); }
+.fwx-dash .ds-hint { font-size: 10.5px; color: var(--ds-text3, #818b98); margin-top: 11px; }
+@media (max-width: 900px) {
+	.fwx-dash .ds-g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.fwx-dash .ds-col2 { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+(function () {
+	var $ = function (id) { return document.getElementById(id); };
+	var BASE = '<%=url("admin/dashboard_api/")%>';
+
+	function api(name, params) {
+		return new Promise(function (resolve) {
+			try {
+				new XHR().get(BASE + name, params || null, function (x, body) {
+					try { resolve(JSON.parse(body)); } catch (e) { resolve(null); }
+				});
+			} catch (e) { resolve(null); }
+		});
+	}
+
+	function fmtBytes(b) {
+		b = Number(b) || 0;
+		if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' G';
+		if (b >= 1048576) return (b / 1048576).toFixed(1) + ' M';
+		if (b >= 1024) return (b / 1024).toFixed(0) + ' K';
+		return b + ' B';
+	}
+
+	function fmtRate(bps) {
+		if (bps >= 1048576) return (bps / 1048576).toFixed(1) + ' M/s';
+		if (bps >= 1024) return (bps / 1024).toFixed(0) + ' K/s';
+		return (bps || 0) + ' B/s';
+	}
+
+	function fmtUptime(sec) {
+		sec = Number(sec) || 0;
+		var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+		if (d > 0) return d + ' 天 ' + h + ' 时';
+		if (h > 0) return h + ' 时 ' + m + ' 分';
+		return m + ' 分';
+	}
+
+	function setText(id, txt) { var el = $(id); if (el) el.textContent = txt; }
+
+	// ---------- 指标卡 + 网络状态 ----------
+	function renderCommon(resp) {
+		var d = resp && resp.data;
+		if (!d) return;
+		var sys = d.system_status || {};
+		var net = d.network_status || {};
+
+		setText('kpi-cpu', sys.cpu !== undefined ? sys.cpu : '--');
+		setText('kpi-cpu-sub', (sys.cpu_model_name || '') +
+			(sys.cpu_temp ? ' · ' + sys.cpu_temp + '℃' : ''));
+		var tm = Number(sys.total_mem) || 0, um = Number(sys.used_mem) || 0;
+		setText('kpi-mem', tm > 0 ? Math.round(um * 100 / tm) : '--');
+		setText('kpi-mem-sub', (um / 1024).toFixed(0) + ' / ' + (tm / 1024).toFixed(0) + ' MB');
+		setText('kpi-clients', sys.client_num !== undefined ? sys.client_num : '--');
+		setText('kpi-clients-sub', '当前在线设备');
+		setText('kpi-uptime', fmtUptime(sys.uptime));
+		setText('kpi-uptime-sub', '连接 ' + (sys.connections || 0) + ' 条');
+
+		var wan = net.wan || {};
+		setText('net-wan-ip', wan.ip || '--');
+		var st = $('net-wan-state');
+		if (st) {
+			var online = Number(net.internet) === 1 && wan.ip;
+			st.textContent = online ? '已连接' : '未连接';
+			st.className = 'ds-tag ' + (online ? 'ds-tag-green' : 'ds-tag-red');
+		}
+		setText('net-dns', (wan.dns && wan.dns.length) ? wan.dns.join(' / ') : '--');
+		setText('net-mode', Number(net.work_mode) === 1 ? '旁路模式' : '网关模式');
+		var flow = sys.flow || {};
+		setText('net-flow', '↑ ' + fmtBytes(flow.today_up) + ' / ↓ ' + fmtBytes(flow.today_down));
+
+		// 端口状态（真实 carrier，已过滤内部 trunk）
+		var ports = net.port_status || [];
+		var pl = $('port-line');
+		if (pl) {
+			pl.innerHTML = ports.map(function (p) {
+				var nm = p.role === 'wan' ? 'WAN' : String(p.name).toUpperCase();
+				var up = Number(p.up) === 1;
+				var sp = up && p.speed > 0 ? ' ' + (p.speed >= 1000 ? (p.speed / 1000) + 'G' : p.speed + 'M') : '';
+				return '<span class="port-chip' + (up ? ' up' : '') + '">' + nm + (up ? ' ●' + sp : ' ○') + '</span>';
+			}).join('');
+		}
+	}
+
+	// ---------- 接口流量（network.device status 两次采样） ----------
+	var callDevStatus = null;
+	var lastSample = null;
+	var IFACES = ['pppoe-wan', 'br-lan', 'eth1'];
+
+	L.require('rpc').then(function (rpc) {
+		callDevStatus = rpc.declare({ object: 'network.device', method: 'status', params: ['name'] });
+		sampleIfaces();
+	});
+
+	function sampleIfaces() {
+		if (!callDevStatus) return;
+		Promise.all(IFACES.map(function (n) {
+			return callDevStatus(n).catch(function () { return null; });
+		})).then(function (results) {
+			var now = Date.now() / 1000;
+			var rows = [];
+			results.forEach(function (r, i) {
+				var name = IFACES[i];
+				if (!r || !r.statistics) return;
+				var rx = Number(r.statistics.rx_bytes) || 0;
+				var tx = Number(r.statistics.tx_bytes) || 0;
+				var rr = 0, tr = 0;
+				if (lastSample && lastSample[name]) {
+					var dt = now - lastSample.t;
+					if (dt > 0.5) {
+						rr = Math.max(0, (rx - lastSample[name].rx) / dt);
+						tr = Math.max(0, (tx - lastSample[name].tx) / dt);
+					}
+				}
+				rows.push({ name: name, rx: rx, tx: tx, rrate: rr, trate: tr, up: r.up });
+				if (!lastSample) lastSample = {};
+				lastSample[name] = { rx: rx, tx: tx };
+			});
+			if (lastSample) lastSample.t = now;
+			if (rows.length) renderIfaces(rows);
+		});
+	}
+
+	function renderIfaces(rows) {
+		var maxRate = 1;
+		rows.forEach(function (r) { maxRate = Math.max(maxRate, r.rrate, r.trate); });
+		var box = $('ifrate-bars');
+		if (!box) return;
+		box.innerHTML = rows.map(function (r, i) {
+			var color = ['var(--ds-accent, #0a7cff)', '#7c5cff', '#3fb950'][i % 3];
+			var w = Math.min(100, Math.round(Math.max(r.rrate, r.trate) * 100 / maxRate));
+			var label = r.name === 'pppoe-wan' ? 'wan (pppoe)' : r.name;
+			return '<div class="bar-row">' +
+				'<span class="nm">' + label + '</span>' +
+				'<div class="track"><div class="fill" style="width:' + w + '%;background:' + color + '"></div></div>' +
+				'<span class="val">↓' + fmtRate(r.rrate) + '</span>' +
+				'</div>';
+		}).join('');
+	}
+
+	// ---------- 活跃应用（实时连接：应用名/设备/域名） ----------
+	function renderApps(resp, usersResp) {
+		var d = resp && resp.data;
+		if (!d || !d.list) return;
+		var nameByMac = {};
+		var u = (usersResp && usersResp.data && usersResp.data.list) || [];
+		u.forEach(function (x) {
+			if (x.mac) nameByMac[x.mac.toLowerCase()] = x.nickname || x.hostname || '';
+		});
+		var seen = {}, rows = [];
+		d.list.forEach(function (a) {
+			var key = a.name || '';
+			if (!key || seen[key]) return;
+			seen[key] = 1;
+			rows.push(a);
+		});
+		var box = $('app-list');
+		if (!box) return;
+		if (!rows.length) { box.innerHTML = '<div class="sub-text">当前无活跃连接</div>'; return; }
+		box.innerHTML = rows.slice(0, 5).map(function (a) {
+			var dev = nameByMac[String(a.mac || '').toLowerCase()] || a.mac || '';
+			var domain = a.domain || a.uri || '';
+			return '<div class="dev-row">' +
+				'<div class="dev-ico">' + escapeHtml(String(a.name || '?').slice(0, 1)) + '</div>' +
+				'<div class="dev-main"><div class="nm">' + escapeHtml(a.name || '未知') + '</div>' +
+				'<div class="meta">' + escapeHtml(dev) + (domain ? ' · ' + escapeHtml(domain) : '') + '</div></div>' +
+				'<div class="dev-traffic">' + (a.protocol || '') + '</div>' +
+				'</div>';
+		}).join('');
+	}
+
+	// ---------- 活跃主机（今日流量） ----------
+	function renderHosts(resp) {
+		var d = resp && resp.data;
+		if (!d || !d.users) return;
+		var box = $('host-list');
+		if (!box) return;
+		var users = d.users.slice(0, 5);
+		if (!users.length) { box.innerHTML = '<div class="sub-text">今日暂无记录</div>'; return; }
+		box.innerHTML = users.map(function (x) {
+			var name = x.nickname || x.hostname || x.mac;
+			return '<div class="dev-row">' +
+				'<div class="dev-ico">' + escapeHtml(String(name).slice(0, 1).toUpperCase()) + '</div>' +
+				'<div class="dev-main"><div class="nm">' + escapeHtml(name) + '</div>' +
+				'<div class="meta">' + escapeHtml(x.ip || x.mac || '') + '</div></div>' +
+				'<div class="dev-traffic">↓ ' + fmtBytes(x.down_bytes) +
+				'<small>↑ ' + fmtBytes(x.up_bytes) + '</small></div>' +
+				'</div>';
+		}).join('');
+	}
+
+	function escapeHtml(s) {
+		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+			return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+		});
+	}
+
+	// ---------- 轮询 ----------
+	function refresh() {
+		api('get_dashboard_common', {}).then(function (r) { renderCommon(r); });
+		api('get_daily_top_users', {}).then(function (r) { renderHosts(r); });
+		Promise.all([api('get_active_users', { count: 50 }), api('get_dashboard_common', {})])
+			.then(function (rs) { renderApps({ data: (rs[1] && rs[1].data && rs[1].data.active_app) || null }, rs[0]); });
+		sampleIfaces();
+	}
+
+	refresh();
+	setInterval(refresh, 5000);
+})();
+</script>
+
+<%+footer%>

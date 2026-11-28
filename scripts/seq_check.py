@@ -154,6 +154,20 @@ for c in sorted(calls):
         order_bad.append("%s(调用%d行 声明%d行)" % (c, call_line, decl_line))
 check(not order_bad, "跨文件函数声明早于调用: " + str(order_bad))
 
+# ===== 仪表盘 1:1 覆盖（真实数据源 + 无占位假数据）=====
+step("仪表盘 1:1 覆盖检查")
+dash_src = "patches/dashboard/dashboard.htm"
+check(os.path.isfile(dash_src), "patches/dashboard/dashboard.htm 存在")
+if os.path.isfile(dash_src):
+    ds = open(dash_src, encoding="utf-8").read()
+    for key in ("get_dashboard_common", "get_daily_top_users", "get_active_users"):
+        check(key in ds, "含真实数据源 " + key)
+    check("network.device" in ds, "接口速率走 network.device status")
+    check(ds.count("<%") == ds.count("%>"), "LuCI 模板标记配对")
+    js = ds.split("<script>")[1].split("</script>")[0]
+    check(sum(1 if c == "{" else (-1 if c == "}" else 0) for c in js) == 0, "JS 大括号平衡")
+    check(not any(k in ds for k in ("占位", "假数据", "TODO")), "无占位/假数据标记")
+
 # ===== REQUIRED_SYMS 对齐 =====
 step("REQUIRED_SYMS 与树内包对齐")
 for sym in ["system", "firewall", "feature", "dashboard", "user", "appfilter",

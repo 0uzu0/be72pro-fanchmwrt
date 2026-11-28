@@ -168,6 +168,13 @@ grep -q "'fwx_accel'," "$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/
 	"$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js"
 echo "  加速页已加入普通模式菜单"
 
+# 2a-5. 仪表盘 1:1（设计基准 docs/ui-redesign.html #v-dash）
+#   数据全部真实：get_dashboard_common / get_daily_top_users / get_active_users
+#   + network.device status（接口速率采样）；映射表 docs/dashboard-data-map.md
+cp -f "$ROOT/patches/dashboard/dashboard.htm" \
+	"$RJ/package/luci-app-fwx-dashboard/luasrc/view/fwx_dashboard/dashboard.htm"
+echo "  仪表盘已替换为 1:1 版（真实数据源）"
+
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），
