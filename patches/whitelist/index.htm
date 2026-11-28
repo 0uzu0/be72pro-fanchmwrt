@@ -1,0 +1,70 @@
+<%#
+ 记录白名单（设计基准 #v-rwhitelist）
+ 真实数据：get_record_whitelist / add_record_whitelist / del_record_whitelist
+（get_record_whitelist_all 在 24.10.4 不存在，页面只做单页列表 + 增删）
+-%>
+<%+header%>
+<div class="fwx-wl">
+	<div class="ds-card">
+		<h3>记录白名单 <span class="ds-tag" id="wl-count">--</span></h3>
+		<div class="ds-hint">白名单内的设备只记录联网行为、不产生审计明细（对应 fwx record_whitelist）。</div>
+		<div class="ds-add">
+			<input class="inp" id="wl-mac" placeholder="MAC 地址（aa:bb:cc:dd:ee:ff）">
+			<input class="inp" id="wl-note" placeholder="备注（可选）">
+			<button class="btn" id="wl-add">加入白名单</button>
+		</div>
+		<table class="tbl">
+			<thead><tr><th>MAC</th><th>备注</th><th>操作</th></tr></thead>
+			<tbody id="wl-body"><tr><td colspan="3" class="ds-hint">加载中…</td></tr></tbody>
+		</table>
+	</div>
+</div>
+<style>
+.fwx-wl .ds-card { background:var(--ds-panel,#fff); border:1px solid var(--ds-line,rgba(31,35,40,.1)); border-radius:var(--ds-r-lg,16px); padding:17px 19px; }
+.fwx-wl .ds-card h3 { font-size:12.5px; font-weight:500; color:var(--ds-text2,#59636e); margin:0 0 9px; display:flex; gap:8px; align-items:center; }
+.fwx-wl .ds-tag { padding:1px 8px; border-radius:99px; font-size:11px; background:var(--ds-panel2,#f6f8fa); color:var(--ds-text2,#59636e); }
+.fwx-wl .ds-hint { font-size:11px; color:var(--ds-text3,#818b98); margin-bottom:13px; }
+.fwx-wl .ds-add { display:flex; gap:9px; margin-bottom:13px; flex-wrap:wrap; }
+.fwx-wl .inp { flex:1; min-width:150px; padding:8px 12px; font-size:12.5px; border:1px solid var(--ds-line2,rgba(31,35,40,.16)); border-radius:9px; background:var(--ds-panel,#fff); color:var(--ds-text,#1f2328); }
+.fwx-wl .btn { padding:8px 16px; border:none; border-radius:8px; cursor:pointer; font-size:12.5px; background:var(--ds-accent,#0a7cff); color:#fff; }
+.fwx-wl .btn.del { background:#d33; padding:5px 12px; font-size:11.5px; }
+.fwx-wl .tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+.fwx-wl .tbl th { text-align:left; font-weight:500; color:var(--ds-text2,#59636e); font-size:11.5px; padding:9px 10px; border-bottom:1px solid var(--ds-line,rgba(31,35,40,.1)); }
+.fwx-wl .tbl td { padding:10px; border-bottom:1px solid var(--ds-line,rgba(31,35,40,.06)); }
+.fwx-wl .ds-hint-td { text-align:center; color:var(--ds-text3,#818b98); font-size:12px; padding:14px; }
+</style>
+<script>
+(function () {
+	var $=function(id){return document.getElementById(id);};
+	var BASE='<%=url("admin/record_whitelist/")%>';
+	function api(n,p){return new Promise(function(r){try{new XHR().get(BASE+n,p,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function post(n,d){return new Promise(function(r){try{new XHR().post(BASE+n,d,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+	function load(){
+		api('get_record_whitelist',{}).then(function(r){
+			var list=(r&&r.data&&(r.data.list||r.data))||[];
+			if(!Array.isArray(list)) list=[];
+			$('wl-count').textContent=list.length+' 条';
+			var box=$('wl-body');
+			if(!list.length){box.innerHTML='<tr><td colspan="3" class="ds-hint-td">白名单为空</td></tr>';return;}
+			box.innerHTML=list.map(function(x){
+				var mac=x.mac||x; var note=x.note||x.comment||'';
+				return '<tr><td>'+esc(mac)+'</td><td>'+esc(note)+'</td><td><button class="btn del" data-mac="'+esc(mac)+'">移出</button></td></tr>';
+			}).join('');
+			Array.prototype.forEach.call(box.querySelectorAll('.btn.del'),function(b){
+				b.addEventListener('click',function(){
+					if(!confirm('移出白名单：'+b.getAttribute('data-mac')+'?'))return;
+					post('del_record_whitelist',{mac:b.getAttribute('data-mac')}).then(load);
+				});
+			});
+		});
+	}
+	$('wl-add').addEventListener('click',function(){
+		var mac=$('wl-mac').value.trim();
+		if(!/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(mac)){alert('MAC 格式不对');return;}
+		post('add_record_whitelist',{mac:mac,note:$('wl-note').value.trim()}).then(function(){$('wl-mac').value='';$('wl-note').value='';load();});
+	});
+	load();
+})();
+</script>
+<%+footer%>

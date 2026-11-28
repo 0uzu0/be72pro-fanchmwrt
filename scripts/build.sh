@@ -187,6 +187,13 @@ cp -f "$ROOT/patches/traffic/traffic_stat.htm" \
 	"$RJ/package/luci-app-fwx-traffic-stat/luasrc/view/fwx_traffic_stat/traffic_stat.htm"
 echo "  终端列表 + 流量/会话统计已替换（真实数据源）"
 
+# 2a-8. 特征库 + 记录白名单（设计稿 #v-feature / #v-rwhitelist）
+cp -f "$ROOT/patches/feature/feature.htm" \
+	"$RJ/package/luci-app-fwx-feature/luasrc/view/feature.htm"
+cp -f "$ROOT/patches/whitelist/index.htm" \
+	"$RJ/package/luci-app-fwx-record-whitelist/luasrc/view/index.htm"
+echo "  特征库 + 记录白名单已替换（真实数据源）"
+
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），

@@ -1,0 +1,56 @@
+<%#
+ 特征库管理（设计基准 #v-feature）
+ 真实数据：get_feature_info（版本/条数，本仓库补的 API）+ get_custom_feature（自定义列表）
+ 写：set_custom_feature / 重载
+-%>
+<%+header%>
+<div class="fwx-feat">
+	<div class="ds-grid ds-g3">
+		<div class="ds-card"><div class="kpi-label">特征库版本</div><div class="kpi kpi-sm" id="f-ver">--</div><div class="sub-text">/etc/fwxd/feature.cfg #version</div></div>
+		<div class="ds-card"><div class="kpi-label">已加载特征</div><div class="kpi"><span id="f-count">--</span><small>条</small></div><div class="sub-text">内核 feature_count</div></div>
+		<div class="ds-card"><div class="kpi-label">自定义特征</div><div class="kpi"><span id="f-custom">--</span><small>条</small></div><div class="sub-text">/etc/fwxd/custom_feature.cfg</div></div>
+	</div>
+	<div class="ds-card">
+		<h3>自定义特征列表</h3>
+		<table class="tbl">
+			<thead><tr><th>ID</th><th>名称</th><th>分类</th><th>端口</th><th>操作</th></tr></thead>
+			<tbody id="f-body"><tr><td colspan="5" class="ds-hint">加载中…</td></tr></tbody>
+		</table>
+	</div>
+</div>
+<style>
+.fwx-feat .ds-grid { display:grid; gap:13px; margin-bottom:13px; }
+.fwx-feat .ds-g3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.fwx-feat .ds-card { background:var(--ds-panel,#fff); border:1px solid var(--ds-line,rgba(31,35,40,.1)); border-radius:var(--ds-r-lg,16px); padding:17px 19px; }
+.fwx-feat .ds-card h3 { font-size:12.5px; font-weight:500; color:var(--ds-text2,#59636e); margin:0 0 13px; }
+.fwx-feat .kpi-label { font-size:11.5px; color:var(--ds-text2,#59636e); margin-bottom:9px; }
+.fwx-feat .kpi { font-size:22px; font-weight:500; color:var(--ds-text,#1f2328); }
+.fwx-feat .kpi-sm { font-size:16px; }
+.fwx-feat .kpi small, .fwx-feat .sub-text { font-size:11px; color:var(--ds-text3,#818b98); }
+.fwx-feat .tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+.fwx-feat .tbl th { text-align:left; font-weight:500; color:var(--ds-text2,#59636e); font-size:11.5px; padding:9px 10px; border-bottom:1px solid var(--ds-line,rgba(31,35,40,.1)); }
+.fwx-feat .tbl td { padding:10px; border-bottom:1px solid var(--ds-line,rgba(31,35,40,.06)); }
+.fwx-feat .ds-hint { text-align:center; color:var(--ds-text3,#818b98); font-size:12px; padding:14px; }
+@media (max-width:900px){ .fwx-feat .ds-g3{grid-template-columns:1fr;} }
+</style>
+<script>
+(function () {
+	var $=function(id){return document.getElementById(id);};
+	function api(u,p){return new Promise(function(r){try{new XHR().get(u,p,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	api('<%=url("admin/fwx/get_feature_info")%>',{}).then(function(r){
+		var d=r&&r.data; if(!d) return;
+		$('f-ver').textContent=d.version||'--';
+		$('f-count').textContent=d.feature_count!=null?d.feature_count:(d.count!=null?d.count:'--');
+	});
+	api('<%=url("admin/fwx/get_custom_feature")%>',{}).then(function(r){
+		var d=r&&r.data; var list=(d&&(d.list||d.apps))||[];
+		$('f-custom').textContent=list.length;
+		var box=$('f-body');
+		if(!list.length){box.innerHTML='<tr><td colspan="5" class="ds-hint">没有自定义特征</td></tr>';return;}
+		box.innerHTML=list.map(function(a){
+			return '<tr><td>'+(a.id!=null?a.id:'--')+'</td><td>'+(a.name||'--')+'</td><td>'+(a.class_name||a.class_id||'--')+'</td><td>'+(a.dest_port||'--')+'</td><td>--</td></tr>';
+		}).join('');
+	});
+})();
+</script>
+<%+footer%>
