@@ -116,7 +116,7 @@ APPS="luci-app-fwx-resources luci-app-fwx-dashboard luci-app-fwx-dashboard-setti
 luci-app-fwx-user luci-app-fwx-user-record luci-app-fwx-appfilter luci-app-fwx-record \
 luci-app-fwx-record-whitelist luci-app-fwx-macfilter luci-app-fwx-mac-blacklist \
 luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
-luci-app-fwx-system luci-app-fwx-firewall"
+luci-app-fwx-system"
 
 mkdir -p "$RJ/package/fcm"
 
@@ -160,6 +160,11 @@ mkdir -p "$RJ/package/luci-app-fwx-system/luasrc/view/fwx_accel"
 cp -f "$ROOT/patches/accel/fwx_accel.lua" "$RJ/package/luci-app-fwx-system/luasrc/controller/fwx_accel.lua"
 cp -f "$ROOT/patches/accel/accel.htm" "$RJ/package/luci-app-fwx-system/luasrc/view/fwx_accel/accel.htm"
 echo "  加速页已并入 luci-app-fwx-system（游戏/视频/下载/办公加速）"
+
+# 主题菜单 JS 覆盖（模式切换重新设计为顶栏分段胶囊；简易模式不含网络/防火墙）
+cp -f "$ROOT/patches/theme/menu-fanchmwrt.js" \
+	"$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js"
+echo "  主题菜单已替换（简易/高级分段切换）"
 
 # 2a-4. 加速页进普通模式菜单：主题 JS 的 basicMenus 按 9 个菜单名过滤，
 #       把 fwx_accel 加进列表（否则普通模式侧边栏看不到加速入口）
@@ -408,7 +413,6 @@ REQUIRED_SYMS=(
 	CONFIG_PACKAGE_luci-app-fwx-traffic-stat
 	CONFIG_PACKAGE_luci-app-fwx-feature
 	CONFIG_PACKAGE_luci-app-fwx-system
-	CONFIG_PACKAGE_luci-app-fwx-firewall
 	CONFIG_PACKAGE_kmod-nft-fullcone
 )
 if [ "$WITH_KMOD" = "1" ]; then

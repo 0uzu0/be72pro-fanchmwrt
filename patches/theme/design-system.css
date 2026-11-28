@@ -823,3 +823,35 @@ button.cbi-button {
 		padding: 16px 14px 32px !important;
 	}
 }
+
+/* 模式切换：顶栏分段胶囊（简易 | 高级）—— 替代原来的 ⋮ 下拉 */
+.mode-seg {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 10px;
+	background: var(--ds-panel2, #f6f8fa);
+	border: 1px solid var(--ds-line, rgba(31,35,40,.1));
+}
+[data-darkmode="true"] .mode-seg {
+	background: rgba(255,255,255,.06);
+	border-color: rgba(255,255,255,.1);
+}
+.mode-seg .seg-item {
+	border: 0;
+	background: transparent;
+	padding: 4px 12px;
+	border-radius: 8px;
+	font-size: 12px;
+	color: var(--ds-text2, #59636e);
+	cursor: pointer;
+	transition: background .15s, color .15s;
+}
+.mode-seg .seg-item.active {
+	background: var(--ds-accent, #0a7cff);
+	color: #fff;
+}
+.mode-seg .seg-item:hover:not(.active) {
+	background: rgba(10,124,255,.08);
+}

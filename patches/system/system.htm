@@ -1,0 +1,68 @@
+<%#
+ 系统设置（设计基准 #v-system；数据：get_system_info / set_system_info）
+-%>
+<%+header%>
+<div class="fwx-sys">
+	<div class="ds-grid ds-col2">
+		<div class="ds-card">
+			<h3>系统信息</h3>
+			<div class="kv"><span>型号</span><span id="s-model">--</span></div>
+			<div class="kv"><span>主机名</span><span id="s-host">--</span></div>
+			<div class="kv"><span>固件版本</span><span id="s-fwx">--</span></div>
+			<div class="kv"><span>内核版本</span><span id="s-kernel">--</span></div>
+			<div class="kv"><span>可用内存</span><span id="s-mem">--</span></div>
+			<div class="kv"><span>温度</span><span id="s-temp">--</span></div>
+		</div>
+		<div class="ds-card">
+			<h3>界面设置</h3>
+			<div class="form-grid">
+				<label>主题模式</label>
+				<select class="inp" id="s-theme">
+					<option value="0">跟随系统</option>
+					<option value="1">浅色</option>
+					<option value="2">深色</option>
+				</select>
+			</div>
+			<div class="ds-actions"><button class="btn" id="s-save">保存</button></div>
+			<div class="ds-hint">主题模式写入 uci fwx.global.theme_mode，刷新后生效。</div>
+		</div>
+	</div>
+</div>
+<style>
+.fwx-sys .ds-grid{display:grid;gap:13px}
+.fwx-sys .ds-col2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fwx-sys .ds-card{background:var(--ds-panel,#fff);border:1px solid var(--ds-line,rgba(31,35,40,.1));border-radius:var(--ds-r-lg,16px);padding:17px 19px}
+.fwx-sys h3{font-size:12.5px;font-weight:500;color:var(--ds-text2,#59636e);margin:0 0 13px}
+.fwx-sys .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:6px 0;color:var(--ds-text,#1f2328)}
+.fwx-sys .kv > span:first-child{color:var(--ds-text2,#59636e)}
+.fwx-sys .form-grid{display:grid;grid-template-columns:100px 1fr;gap:11px 16px;align-items:center;font-size:13px}
+.fwx-sys label{color:var(--ds-text2,#59636e)}
+.fwx-sys .inp{width:100%;padding:7px 10px;font-size:12.5px;border:1px solid var(--ds-line2,rgba(31,35,40,.16));border-radius:9px;background:var(--ds-panel,#fff);color:var(--ds-text,#1f2328);box-sizing:border-box}
+.fwx-sys .ds-actions{margin-top:13px}
+.fwx-sys .btn{padding:7px 16px;border:none;border-radius:8px;cursor:pointer;background:var(--ds-accent,#0a7cff);color:#fff;font-size:12.5px}
+.fwx-sys .ds-hint{font-size:11px;color:var(--ds-text3,#818b98);margin-top:11px}
+@media (max-width:900px){.fwx-sys .ds-col2{grid-template-columns:1fr}}
+</style>
+<script>
+(function(){
+	var $=function(i){return document.getElementById(i);};
+	function api(u,p){return new Promise(function(r){try{new XHR().get(u,p,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	function post(u,d){return new Promise(function(r){try{new XHR().post(u,d,function(x,b){try{r(JSON.parse(b));}catch(e){r(null);}});}catch(e){r(null);}});}
+	api('<%=url("admin/fwx/get_system_info")%>',{}).then(function(r){
+		var d=(r&&r.data)||{};
+		var sys=d.system_status||d;
+		$('s-model').textContent=sys.model||d.model||'--';
+		$('s-host').textContent=sys.hostname||d.hostname||'--';
+		$('s-fwx').textContent=sys.fwx_version||d.fwx_version||'--';
+		$('s-kernel').textContent=sys.kernel_version||d.kernel_version||'--';
+		var tm=Number(sys.total_mem)||0, um=Number(sys.used_mem)||0;
+		$('s-mem').textContent=tm>0?((tm-um)/1024).toFixed(0)+' / '+(tm/1024).toFixed(0)+' MB':'--';
+		$('s-temp').textContent=(sys.cpu_temp||d.cpu_temp||'--')+' ℃';
+		if(d.theme_mode!==undefined) $('s-theme').value=String(d.theme_mode);
+	});
+	$('s-save').addEventListener('click',function(){
+		post('<%=url("admin/fwx/set_system_info")%>',{theme_mode:Number($('s-theme').value)}).then(function(){alert('已保存，刷新页面生效');});
+	});
+})();
+</script>
+<%+footer%>
