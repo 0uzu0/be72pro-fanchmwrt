@@ -339,6 +339,77 @@ def apply_host_fallback(ubus_path):
     return 0
 
 
+INSERT_CPU_SAMPLE = '''    /* be72: CPU 占用改用 /proc/stat 两次采样 —— 原实现 top -n 1 | grep 'CPU:'
+       在 busybox 的 top 里没有该格式，永远取不到值 -> cpu 恒 0（假数据）。
+       首次调用无历史基线返回 0，页面轮询 5s 后即为真实值。 */
+    {
+        static unsigned long long be72_prev_total = 0;
+        static unsigned long long be72_prev_idle = 0;
+        unsigned long long u = 0, n = 0, ss = 0, idle = 0, iow = 0, irq = 0, sirq = 0, steal = 0;
+        unsigned long long total = 0, idle_all = 0;
+        int cpu_usage = 0;
+        FILE *sfp = fopen("/proc/stat", "r");
+        if (sfp) {
+            if (fscanf(sfp, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
+                       &u, &n, &ss, &idle, &iow, &irq, &sirq, &steal) >= 5) {
+                total = u + n + ss + idle + iow + irq + sirq + steal;
+                idle_all = idle + iow;
+                if (be72_prev_total != 0 && total > be72_prev_total) {
+                    unsigned long long dt = total - be72_prev_total;
+                    unsigned long long di = idle_all - be72_prev_idle;
+                    cpu_usage = (int)(100ULL * (dt - di) / dt);
+                }
+                be72_prev_total = total;
+                be72_prev_idle = idle_all;
+            }
+            fclose(sfp);
+        }
+        snprintf(buf, sizeof(buf), "%d", cpu_usage);
+        json_object_object_add(system_status, "cpu", json_object_new_string(buf));
+    }'''
+# ---------------------------------------------------------------- batch6: CPU 采样
+# 原实现 top -n 1 | grep 'CPU:' 在 busybox 下取不到值（cpu 恒 0，假数据）。
+# 改用 /proc/stat 两次采样；fwx_ubus.c 是 CRLF 行尾，按行号区间替换。
+CPU_MARK = "be72: CPU 占用改用 /proc/stat"
+
+
+def apply_cpu_sample(ubus_path):
+    raw = open(ubus_path, "rb").read()
+    crlf = b"\r\n" in raw
+    text = raw.decode("utf-8", "surrogateescape")
+    nl = "\r\n" if crlf else "\n"
+    lines = text.split(nl)
+
+    if any(CPU_MARK in ln for ln in lines):
+        print("  [skip] CPU 采样已是目标状态")
+        return 0
+
+    # 定位：含 "top -n 1" 的行；向上找 memset(result 行；向下找 else 块结束 "    }"
+    top_idx = next((i for i, ln in enumerate(lines) if "top -n 1" in ln), -1)
+    if top_idx < 0:
+        print("  [!] 找不到 top -n 1（CPU 采样锚点）")
+        return 2
+    start = top_idx
+    while start > 0 and "memset(result, 0, sizeof(result));" not in lines[start]:
+        start -= 1
+    if "memset(result, 0, sizeof(result));" not in lines[start]:
+        print("  [!] 找不到 memset(result 锚点")
+        return 2
+    end = top_idx
+    while end < len(lines) - 1 and lines[end].strip() != "}":
+        end += 1
+    # 再吃掉紧随其后的空行
+    while end + 1 < len(lines) and lines[end + 1].strip() == "":
+        end += 1
+
+    snippet = [ln for ln in INSERT_CPU_SAMPLE.split("\n")]
+    lines[start:end + 1] = snippet
+    new_text = nl.join(lines)
+    with open(ubus_path, "wb") as f:
+        f.write(new_text.encode("utf-8", "surrogateescape"))
+    print("  [+] CPU 占用：/proc/stat 两次采样（原 top|awk 恒 0）")
+    return 0
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__.strip())
@@ -422,6 +493,7 @@ def main():
     apply_batch2(ubus)
     apply_main_custom(os.path.join(tree, FWXD_TOP_REL, "src", "main.c"))
     apply_host_fallback(ubus)
+    apply_cpu_sample(ubus)
 
     # ---------- 3. fwx_user.c：写入侧过滤 ----------
     user = os.path.join(tree, USER_REL)
