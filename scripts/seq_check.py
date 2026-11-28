@@ -99,6 +99,12 @@ missing = [a for a, f, _ in apis
 check(not missing, "19+ 个分派 API 全有函数体: " + str(missing))
 check("fwx_api_get_feature_info" in ub, "get_feature_info 声明/分派就位")
 
+# ===== --hnat 单参模式不崩溃（build-46 教训）=====
+step("3.2 patch_kernel_extras.py --hnat（单参不崩）")
+r = subprocess.run([sys.executable, "scripts/patch_kernel_extras.py", "--hnat", RJ],
+                   capture_output=True, text=True)
+check("Traceback" not in r.stderr, "--hnat 单参调用无异常")
+
 # ===== REQUIRED_SYMS 对齐 =====
 step("REQUIRED_SYMS 与树内包对齐")
 for sym in ["system", "firewall", "feature", "dashboard", "user", "appfilter",

@@ -160,9 +160,10 @@ echo "  加速页已并入 luci-app-fwx-system（游戏/视频/下载/办公加�
 
 # 2a-4. 加速页进普通模式菜单：主题 JS 的 basicMenus 按 9 个菜单名过滤，
 #       把 fwx_accel 加进列表（否则普通模式侧边栏看不到加速入口）
-sed -i "s/'fwx_user_record',/'fwx_user_record',\n\t\t\t'fwx_accel',/" \
-	"$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js" && \
-	echo "  加速页已加入普通模式菜单"
+grep -q "'fwx_accel'," "$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js" || \
+	sed -i "s/'fwx_user_record',/'fwx_user_record',\n\t\t\t'fwx_accel',/" \
+	"$RJ/package/fcm/luci-theme-fanchmwrt/htdocs/luci-static/resources/menu-fanchmwrt.js"
+echo "  加速页已加入普通模式菜单"
 
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕

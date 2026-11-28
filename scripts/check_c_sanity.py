@@ -48,7 +48,7 @@ inet_ntop inet_pton htonl ntohl htons ntohs
 LOG_ERROR LOG_WARN LOG_INFO LOG_DEBUG LOG_TRACE
 list_for_each_entry list_for_each_entry_safe INIT_LIST_HEAD list_add list_add_tail
 list_del list_empty container_of
-sizeof __attribute__ typeof offsetof
+errno json_object_get_string_len json_object_get_int64 json_object_array_length json_object_array_put_idx sizeof __attribute__ typeof offsetof
 """.split())
 
 # C 关键字与类型名（出现在表达式位置时不算未声明）
@@ -152,7 +152,7 @@ def main(paths):
         # 文件级全局变量（列 0 定义），供"赋值给未声明标识符"检查使用
         globals_ = set()
         for m in re.finditer(
-                r'^(?:static\s+)?(?:struct\s+\w+|unsigned\s+\w+|long\s+long|char|int|'
+                r'^(?:static\s+)?(?:struct\s+\w+|unsigned\s+\w+|long\s+long|long|[A-Za-z_]\w*_t|char|int|'
                 r'size_t|time_t|FILE|client_node_t|user_record_t|visit_info_t|'
                 r'traffic_stat_t|daily_hourly_stat_t)\s*\**\s*(\w+)\s*(?:\[[^\]]*\])?\s*[=;]',
                 code, re.M):
@@ -209,11 +209,20 @@ def main(paths):
             body_base_line = line_of(code, b_start)
             locals_ = set()
             for m in re.finditer(
-                    r'\b(?:struct\s+\w+|unsigned\s+\w+|long\s+long|char|int|void|size_t|time_t|'
+                    r'\b(?:struct\s+\w+|unsigned\s+\w+|long\s+long|long|[A-Za-z_]\w*_t|char|int|void|size_t|time_t|'
                     r'FILE|client_node_t|user_record_t|visit_info_t|traffic_stat_t|'
-                    r'daily_hourly_stat_t|struct\s+json_object|struct\s+uci_context)'
+                    r'daily_hourly_stat_t|struct\s+json_object|struct\s+uci_context|'
+                    r'[A-Za-z_]\w*_t)'
                     r'\s*\**\s*(\w+)', body):
                 locals_.add(m.group(1))
+                # 多变量声明（int a, b; char *p, q;）—— 声明行里逗号分隔的
+                # 后继变量名也算已声明（build-51 的 'int id, got;' 误报教训）
+                line_end = body.find('\n', m.start())
+                if line_end == -1:
+                    line_end = len(body)
+                for nm in re.findall(r'(?:\*|\s)\s*([a-zA-Z_]\w*)\s*(?=[,;\[=)])',
+                                     body[m.start():line_end]):
+                    locals_.add(nm)
             # 函数参数
             for m in re.finditer(r'\b(\w+)\s*(?:,|\))', code[s_idx:b_start]):
                 locals_.add(m.group(1))
