@@ -1,0 +1,41 @@
+msgid "Network Acceleration"
+msgstr "网络加速"
+
+msgid "Enable per-category acceleration: traffic of enabled categories skips deep DPI parsing and audit recording, reducing CPU usage. Note: accelerated categories no longer participate in app filtering / blacklist / audit detail."
+msgstr "按类别开启加速：开启类别的流量跳过 DPI 深度解析与审计记录，降低 CPU 占用。注意：加速类别不再参与应用过滤、黑名单拦截与审计明细。"
+
+msgid "Game Acceleration"
+msgstr "游戏加速"
+
+msgid "Lower latency for game traffic under load."
+msgstr "负载下降低游戏流量延迟。"
+
+msgid "Video Acceleration"
+msgstr "视频加速"
+
+msgid "More CPU headroom for video streams."
+msgstr "为视频流腾出更多 CPU 资源。"
+
+msgid "Download Acceleration"
+msgstr "下载加速"
+
+msgid "Better throughput for bulk transfers under load."
+msgstr "负载下提升大流量传输吞吐。"
+
+msgid "Office Acceleration"
+msgstr "办公加速"
+
+msgid "Web / tools / finance categories get the fast path."
+msgstr "网页 / 工具 / 财经类别走快速通道。"
+
+msgid "Loading ..."
+msgstr "读取中 ..."
+
+msgid "Save & Apply"
+msgstr "保存并应用"
+
+msgid "HNAT hook: disabled (audit on, accurate stats)"
+msgstr "HNAT 钩子：已停用（审计开启，统计准确）"
+
+msgid "HNAT hook: enabled (hardware offload, DPI bypassed)"
+msgstr "HNAT 钩子：已启用（硬件加速，DPI 已旁路）"

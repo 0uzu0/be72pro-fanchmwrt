@@ -52,6 +52,22 @@ DESIGN_MARK = "be72pro-fanchmwrt:design-system"   # 判重子串（CSS 首行是
 DESIGN_CSS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                           "patches", "theme", "design-system.css")
 
+# 模式 CSS 剥离标记与选择器黑名单（统一 UI：删除简单/高级双模式的样式残留）。
+# vendor cascade.css 里这些规则配合 menu-fanchmwrt.js 的 getMenuCategory 使用；
+# 仓库版菜单 JS 不再产出这些类，规则成了死代码 —— 应用设计层时顺手剥离。
+STRIP_MARK = "be72pro-fanchmwrt:strip-mode-css"
+STRIP_SELECTORS = (
+    ".menu-item-basic",
+    ".menu-item-advanced",
+    ".mode-item",
+    ".mode-check",
+    ".mode-title",
+    ".top-mode-",
+    ".top-more-button",
+    ".top-more-icon",
+    "#modemenu",
+)
+
 # ---------------------------------------------------------------- A：fwx 页面
 # 原文件里的类名（.fwx-form-card / .form-title / .submit-button / .switch ...）
 # 保持不变，只把「颜色/边框/背景」改成变量，这样 14 个页面立刻跟随主题与深浅色。
@@ -282,6 +298,101 @@ def write(path, text):
         f.write(text.encode("utf-8", "surrogateescape"))
 
 
+def strip_mode_css(path):
+    """从 cascade.css 里剥掉简单/高级模式相关规则（幂等）。
+
+    解析方式：逐字符扫描，在每个规则（含 @media 等包裹块）的预lude 里找
+    黑名单选择器；命中就整块丢弃。@media 块本身不命中，但其内部子规则会
+    被同样检查，剩余子规则保留。只删不增，跑多少遍结果一致。
+    返回 0 = 已剥离或本来就干净；2 = 文件不存在。
+    """
+    if not os.path.isfile(path):
+        print("  [x] 找不到 %s" % path)
+        return 2
+    src = read(path)
+
+    out = []
+    i = 0
+    n = len(src)
+    dropped = 0
+    while i < n:
+        brace = src.find("{", i)
+        if brace == -1:
+            out.append(src[i:])
+            break
+        prelude = src[i:brace]
+        # 找与本块匹配的右括号（允许嵌套，@media 内含完整规则）
+        depth = 1
+        j = brace + 1
+        while j < n and depth > 0:
+            if src[j] == "{":
+                depth += 1
+            elif src[j] == "}":
+                depth -= 1
+            j += 1
+        body = src[brace + 1 : j - 1] if depth == 0 else src[brace + 1 : j]
+
+        if "@" in prelude and prelude.lstrip().startswith("@"):
+            # 包裹块（@media/@supports）：递归处理内部规则
+            inner = _strip_rules(body)
+            if inner.strip():
+                out.append(prelude + "{" + inner + "}")
+            dropped += 1 if inner != body else 0
+        elif any(sel in prelude for sel in STRIP_SELECTORS):
+            dropped += 1  # 整块丢弃
+        else:
+            out.append(prelude + "{" + body + "}")
+        i = j if depth == 0 else n
+
+    result = "".join(out)
+    if STRIP_MARK not in result:
+        result = ("/* === " + STRIP_MARK + "：简单/高级模式 CSS 已剥离 === */\n") + result.lstrip()
+    if result != src:
+        write(path, result)
+        print("  [+] 模式 CSS 已剥离（移除 %d 条规则）" % dropped)
+    else:
+        print("  [skip] 模式 CSS 无残留")
+    return 0
+
+
+def _strip_rules(body):
+    """对块内部再跑一遍同样的剥离逻辑（供 @media 递归），返回剩余内容。"""
+    out = []
+    i = 0
+    n = len(body)
+    while i < n:
+        brace = body.find("{", i)
+        if brace == -1:
+            # 尾部没有左括号的多余片段（不应出现，保险保留）
+            tail = body[i:]
+            if tail.strip():
+                out.append(tail)
+            break
+        prelude = body[i:brace]
+        depth = 1
+        j = brace + 1
+        while j < n and depth > 0:
+            if body[j] == "{":
+                depth += 1
+            elif body[j] == "}":
+                depth -= 1
+            j += 1
+        inner = body[brace + 1 : j - 1] if depth == 0 else body[brace + 1 : j]
+        if "@" in prelude and prelude.lstrip().startswith("@"):
+            inner2 = _strip_rules(inner)
+            if inner2.strip():
+                out.append(prelude + "{" + inner2 + "}")
+        elif any(sel in prelude for sel in STRIP_SELECTORS):
+            pass  # 丢弃
+        else:
+            out.append(prelude + "{" + inner + "}")
+        i = j if depth == 0 else n
+    # 保留块尾空白（可能是最后一个规则的尾随换行），保证重复运行输出逐字节一致
+    if i < n:
+        out.append(body[i:])
+    return "".join(out)
+
+
 def append_design(path, label):
     """把 patches/theme/design-system.css 追加到目标 CSS（幂等，按 DESIGN_MARK 判重）。"""
     if not os.path.isfile(path):
@@ -334,6 +445,7 @@ def main():
             if a == "--fwx":
                 rc |= append_bridge(os.path.join(tree, FWX_CSS_REL), FWX_BRIDGE, "fwx common.css")
             elif a == "--design":
+                rc |= strip_mode_css(os.path.join(tree, THEME_CSS_REL))
                 rc |= append_design(os.path.join(tree, THEME_CSS_REL), "主题 cascade.css")
             else:
                 rc |= append_bridge(os.path.join(tree, THEME_CSS_REL), THEME_BRIDGE, "主题 cascade.css")

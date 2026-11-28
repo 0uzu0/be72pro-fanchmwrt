@@ -7,7 +7,10 @@ function index()
 	if not nixio.fs.access("/etc/config/fwx") then
 		return
 	end
-	entry({"admin", "fwx", "fwx_accel"}, template("fwx_accel/accel"), _("Network Acceleration"), 25).leaf = true
+	-- 统一 UI（v2.1.0）：页面提升为顶级菜单节点（原注册在 admin/fwx 匿名 API
+	-- 节点下，侧边栏没有入口，只能手输 URL）。旧地址留 alias 兼容。
+	entry({"admin", "fwx_accel"}, template("fwx_accel/accel"), _("Network Acceleration"), 26).dependent = true
+	entry({"admin", "fwx", "fwx_accel"}, alias("admin", "fwx_accel"), nil).leaf = true
 	entry({"admin", "fwx_accel", "status"}, call("api_status"), nil).leaf = true
 	entry({"admin", "fwx_accel", "set"}, call("api_set"), nil).leaf = true
 end

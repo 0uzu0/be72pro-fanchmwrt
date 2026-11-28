@@ -2,6 +2,21 @@
 'require baseclass';
 'require ui';
 
+/*
+ * 统一 UI 菜单（v2.1.0 起）
+ *
+ * 本文件替代 vendor 主题的同名文件（build.sh 拷贝主题后覆盖，见 2b-1 步骤）。
+ * 与 vendor 版的差异：
+ *   - 删除简单/高级双模式：getMenuCategory / switchCategory /
+ *     menu-item-basic / menu-item-advanced / localStorage('luci-menu-category') /
+ *     renderModeMenu / #modemenu 全部移除，系统只有一种 UI 展示模式。
+ *   - 所有顶级菜单常驻侧边栏（fwx 业务页 + LuCI 原生页），按业务顺序排列；
+ *     清单外的新节点追加在 logout 之前，保证不遗漏任何功能入口。
+ *   - 无标题的匿名节点（admin/fwx 等 API 容器）不进菜单；
+ *     fwx_network（luci-app-fwx-network 移除后失去标题）补显示名「Firewall」。
+ * 设计系统样式见 design-system.css（构建时由 style_bridge.py 追加到 cascade.css）。
+ */
+
 return baseclass.extend({
 	menuIcons: {
 		'fwx_network': 'fwx_network',
@@ -12,45 +27,70 @@ return baseclass.extend({
 		'fwx_internet_record': 'fwx_internet_record',
 		'fwx_user': 'fwx_user',
 		'fwx_monitor': 'fwx_monitor',
+		'fwx_accel': 'fwx_advance',
 	},
 	defaultIcon: 'default',
+
+	/* 统一侧边栏的业务顺序（docs/ui-unify-plan.html 清单二）。
+	 * 不在表内的节点按原注册顺序排在 logout 之前。 */
+	MENU_ORDER: [
+		'fwx_dashboard',        // 运行概览
+		'fwx_user',             // 终端管理
+		'fwx_parental_control', // 应用管控（应用过滤 / MAC 过滤 / 上网黑名单）
+		'fwx_internet_record',  // 上网审计（审计开关 / 审计白名单）
+		'fwx_monitor',          // 数据监控（会话 / 流量 / 上下线记录）
+		'fwx_accel',            // 网络加速
+		'network',              // LuCI 网络（接口 / 无线 / EQoS / TurboAcc / 诊断）
+		'fwx_network',          // 防火墙（fwx 基础防火墙）
+		'firewall',             // LuCI 防火墙（区域 / 转发 / 规则）
+		'status',               // LuCI 状态（概览 / 日志 / 进程）
+		'fwx_advance',          // 系统管理（仪表板设置 / 特征库 / fwx 系统配置）
+		'system',               // LuCI 系统（管理 / 软件包 / 启动项 / ttyd）
+		'logout',               // 退出登录
+	],
+
+	/* 标题覆盖：节点本身无标题（注册它的应用已移除），但页面必须可达。
+	 * 'Firewall' 是 luci-i18n-base-zh-cn 已有的词条（防火墙）。 */
+	MENU_TITLE_OVERRIDES: {
+		'fwx_network': 'Firewall',
+	},
+
 	__init__() {
 		ui.menu.load().then(L.bind(this.render, this));
 		window.addEventListener('resize', L.bind(this.handleResize, this));
 	},
-	
+
 	isMobileDevice() {
 		const userAgent = navigator.userAgent || navigator.vendor || window.opera;
 		const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
 		const isMobileUA = mobileRegex.test(userAgent);
-		
+
 		const width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
 		const isMobileWidth = width <= 768;
-		
+
 		const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-		
+
 		const isHighDPR = window.devicePixelRatio && window.devicePixelRatio > 1;
 
 		const isMobile = isMobileUA && isMobileWidth;
-		
+
 		const isMobileLandscape = isMobileUA && width > 768 && width <= 1024;
-		
+
 		const result = isMobile || isMobileLandscape;
-		
 
 		return result;
 	},
-	
+
 	isWideScreen() {
 		return !this.isMobileDevice();
 	},
-	
+
 	handleResize() {
 		clearTimeout(this.resizeTimer);
 		this.resizeTimer = setTimeout(() => {
 			const isWide = this.isWideScreen();
 			const sidebarNav = document.querySelector('.sidebar-nav');
-			
+
 			if (isWide) {
 				if (sidebarNav) {
 					sidebarNav.style.display = '';
@@ -102,7 +142,7 @@ return baseclass.extend({
 				this.renderMobileMenu(node, url, currentLevel);
 			}
 		}
-		
+
 		setTimeout(() => {
 			this.handleResize();
 		}, 100);
@@ -188,7 +228,6 @@ return baseclass.extend({
 		}
 		}
 	},
-	
 
 	renderBreadcrumb(tree) {
 		if (L.env.dispatchpath && L.env.dispatchpath.length >= 2 &&
@@ -207,10 +246,10 @@ return baseclass.extend({
 		for (let i = 0; i < L.env.dispatchpath.length && currentNode; i++) {
 			const pathSegment = L.env.dispatchpath[i];
 			currentPath += (currentPath ? '/' : '') + pathSegment;
-			
+
 			if (currentNode.children && currentNode.children[pathSegment]) {
 				currentNode = currentNode.children[pathSegment];
-				
+
 				if (i === 0 && pathSegment === 'admin') {
 					const homeItem = E('li', { 'class': 'home-item' }, [
 						E('a', { 'href': '/cgi-bin/luci/admin/fwx_dashboard', 'title': _('Home') }, [
@@ -219,10 +258,14 @@ return baseclass.extend({
 					]);
 					breadcrumbItems.push(homeItem);
 				} else {
+					const displayName = this.menuDisplayName(currentNode);
+					if (displayName === null) {
+						continue;
+					}
 					const breadcrumbItem = E('li', {}, [
-						E('span', {}, [_(currentNode.title)])
+						E('span', {}, [displayName])
 					]);
-					
+
 					breadcrumbItems.push(breadcrumbItem);
 				}
 			}
@@ -242,78 +285,47 @@ return baseclass.extend({
 			if (existingBreadcrumb) {
 				existingBreadcrumb.remove();
 			}
-			
+
 			mainContent.insertBefore(breadcrumbContainer, mainContent.firstChild);
 		}
 	},
 
-	switchCategory(category) {
-		
-		const isWide = this.isWideScreen();
-		if (!isWide) {
-			return;
+	/* 节点显示名：标题覆盖优先；无标题且无覆盖返回 null（该节点不进菜单）。 */
+	menuDisplayName(node) {
+		const override = node && node.name ? this.MENU_TITLE_OVERRIDES[node.name] : undefined;
+		if (override !== undefined) {
+			return _(override);
 		}
-		
-		const navTabs = document.querySelector('.top-navbar .nav-tabs');
-		if (navTabs) {
-			const tabs = navTabs.querySelectorAll('li');
-			tabs.forEach(li => {
-			li.classList.remove('active');
-		});
-			const activeTab = navTabs.querySelector(`li[data-category="${category}"]`);
-		if (activeTab) {
-			activeTab.classList.add('active');
+		if (node && node.title) {
+			return _(node.title);
 		}
-		}
+		return null;
+	},
 
-		const modeItems = document.querySelectorAll('.top-user-dropdown .mode-item');
-		modeItems.forEach((item) => {
-			const isActive = item.getAttribute('data-category') === category;
-			item.classList.toggle('active', isActive);
+	/* 顶级菜单排序：MENU_ORDER 在前，其余按原顺序跟在后面。 */
+	sortTopLevel(children) {
+		const order = this.MENU_ORDER;
+		const last = order.length;
+		return children.slice().sort((a, b) => {
+			const ra = order.indexOf(a.name);
+			const rb = order.indexOf(b.name);
+			return (ra === -1 ? last : ra) - (rb === -1 ? last : rb);
 		});
-
-		const menuContainer = document.querySelector('#topmenu');
-		
-		if (menuContainer) {
-			const menuItems = Array.from(menuContainer.children).filter(child => child.tagName === 'LI');
-			menuItems.forEach(li => {
-			if (category === 'basic') {
-				if (li.classList.contains('menu-item-basic')) {
-					li.style.display = 'block';
-				} else if (li.classList.contains('menu-item-advanced')) {
-					li.style.display = 'none';
-				}
-			} else if (category === 'advanced') {
-				if (li.classList.contains('menu-item-basic')) {
-					li.style.display = 'none';
-				} else if (li.classList.contains('menu-item-advanced')) {
-					li.style.display = 'block';
-				}
-			}
-		});
-		}
-		
-		this.currentCategory = category;
-		localStorage.setItem('luci-menu-category', category);
 	},
 
 	isAlreadyRendered(tree, level, parentName) {
-
-		
 		const treeName = tree.name;
-		
 
 		if (level === 1 && parentName) {
 			const existingSubmenus = document.querySelectorAll('#topmenu .dropdown-menu a');
 			for (let link of existingSubmenus) {
 				const href = link.getAttribute('href');
 				if (href) {
-
 					const pathMatch = href.match(/\/admin\/([^\/\?#]+)\/([^\/\?#]+)/);
 					if (pathMatch) {
 						const existingParentMenu = pathMatch[1];
 						const existingChildMenu = pathMatch[2];
-		
+
 						if (existingParentMenu === parentName && existingChildMenu === treeName) {
 							return true;
 						}
@@ -335,38 +347,13 @@ return baseclass.extend({
 				return true;
 			}
 		}
-		
+
 		return false;
-	},
-
-
-
-	getMenuCategory(menuName) {
-		const basicMenus = [
-			'fwx_dashboard',    
-			'fwx_parental_control',
-			'fwx_user',
-			'fwx_internet_record',
-			'fwx_advance',    
-			'fwx_network',
-			'fwx_session_stat',
-			'fwx_user_record',
-			'fwx_monitor',
-		];
-
-		const normalizedName = (menuName || '').toLowerCase();
-		const normalizedBasicMenus = basicMenus.map(m => m.toLowerCase());
-		
-		if (normalizedBasicMenus.includes(normalizedName)) {
-			return 'menu-item-basic';
-		} else {
-			return 'menu-item-advanced';
-		}
 	},
 
 	renderTabMenu(tree, url, level) {
 		level = level || 0;
-		
+
 		const container = document.querySelector('#tabmenu');
 		const ul = E('ul', { 'class': 'tabs' });
 		const children = ui.menu.getChildren(tree);
@@ -401,34 +388,14 @@ return baseclass.extend({
 
 		const isWide = this.isWideScreen();
 		let ul;
-		
+
 		if (level === 0) {
-			if (isWide) {
-				ul = document.querySelector('#topmenu');
-			} else {
-				ul = document.querySelector('#topmenu-mobile');
-				if (!ul) {
-					const topNavbar = document.querySelector('.top-navbar');
-					if (topNavbar) {
-						const topNavbarContent = topNavbar.querySelector('.top-navbar-content');
-						if (topNavbarContent) {
-							ul = topNavbarContent.querySelector('#topmenu-mobile');
-							if (!ul) {
-								ul = E('ul', { 'id': 'topmenu-mobile', 'class': 'nav navbar-nav' });
-								topNavbarContent.appendChild(ul);
-							}
-						}
-					}
-				}
-				if (!ul) {
-					ul = document.querySelector('#topmenu');
-				}
-			}
+			ul = document.querySelector('#topmenu');
 		} else {
 			ul = E('ul', { 'class': 'dropdown-menu' });
 		}
-		
-		const children = ui.menu.getChildren(tree);
+
+		let children = ui.menu.getChildren(tree);
 
 		if (children.length == 0 || level > 1)
 			return E([]);
@@ -438,6 +405,14 @@ return baseclass.extend({
 			return E([]);
 		}
 
+		/* 统一 UI：顶级菜单按业务顺序排列，全部常驻；
+		 * 无标题且无覆盖的节点（如 admin/fwx 这类 API 容器）不进菜单。 */
+		if (level === 0) {
+			children = this.sortTopLevel(children);
+		}
+		children = children.filter(child => {
+			return level > 0 || this.menuDisplayName(child) !== null;
+		});
 
 		children.forEach(child => {
 
@@ -446,17 +421,11 @@ return baseclass.extend({
 			const linkclass = (level === 0 && submenu.firstElementChild) ? 'menu' : '';
 			const linkurl = submenu.firstElementChild ? '#' : L.url(url, child.name);
 
-			const categoryClass = this.getMenuCategory(child.name);
-			const classParts = [];
-			if (subclass) classParts.push(subclass);
-			if (categoryClass) classParts.push(categoryClass);
-			const fullClass = classParts.join(' ');
-
 			const iconClass = level === 0 ? this.generateMenuIconClass(child.name) : '';
 			const finalLinkClass = linkclass + (iconClass ? ' ' + iconClass : '');
-			
-			const li = E('li', { 'class': fullClass }, [
-				E('a', { 'class': finalLinkClass, 'href': linkurl }, [_(child.title)]),
+
+			const li = E('li', { 'class': subclass }, [
+				E('a', { 'class': finalLinkClass, 'href': linkurl }, [ this.menuDisplayName(child) ]),
 				submenu
 			]);
 
@@ -467,15 +436,12 @@ return baseclass.extend({
 				}
 			}
 
-		
 			if (level === 1) {
 				const isActive = ((L.env.dispatchpath[2] == child.name) && (L.env.dispatchpath[1] == tree.name));
 				if (isActive) {
 					li.classList.add('active');
-		
 				}
 			}
-
 
 			if (level === 0 && submenu.firstElementChild) {
 				const menuLink = li.querySelector('a.menu');
@@ -484,39 +450,33 @@ return baseclass.extend({
 					e.stopPropagation();
 					const dropdown = li;
 					const isOpen = dropdown.classList.contains('open');
-										
-	
-					const menuSelector = isWide ? '#topmenu' : '#topmenu-mobile';
-					document.querySelectorAll(menuSelector + ' .dropdown.open').forEach(item => {
+
+					document.querySelectorAll('#topmenu .dropdown.open').forEach(item => {
 						if (item !== dropdown) {
 							item.classList.remove('open');
 						}
 					});
-					
 
 					if (isOpen) {
 						dropdown.classList.remove('open');
-	
 					} else {
 						dropdown.classList.add('open');
 					}
 				});
 			}
 
-
 			if (level === 1) {
 				const submenuLink = li.querySelector('a');
 				if (submenuLink) {
 					submenuLink.addEventListener('click', function(e) {
 						e.stopPropagation();
-	
+
 						if (!this.isWideScreen()) {
 							this.hideMobileMenu();
 						}
 					}.bind(this));
 				}
 			}
-			
 
 			if (level === 0 && !submenu.firstElementChild) {
 				const menuLink = li.querySelector('a');
@@ -540,35 +500,37 @@ return baseclass.extend({
 
 	renderMobileMenu(tree, url, level) {
 		level = level || 0;
-		
+
 		let ul;
-		
+
 		if (level === 0) {
-	
 			ul = document.querySelector('#topmenu-mobile');
 			if (!ul) {
-
 				console.error('topmenu-mobile not found in header!');
 				return E([]);
 			}
 		} else {
-
 			ul = E('ul', { 'class': 'dropdown-menu' });
 		}
-		
-		const children = ui.menu.getChildren(tree);
+
+		let children = ui.menu.getChildren(tree);
 
 		if (children.length == 0 || level > 1)
 			return E([]);
-		
 
 		const parentName = (level === 1) ? tree.name : null;
 		if (this.isAlreadyRendered(tree, level, parentName)) {
 			return E([]);
 		}
 
-		children.forEach(child => {
+		if (level === 0) {
+			children = this.sortTopLevel(children);
+		}
+		children = children.filter(child => {
+			return level > 0 || this.menuDisplayName(child) !== null;
+		});
 
+		children.forEach(child => {
 
 			const submenu = this.renderMobileMenu(child, url + '/' + child.name, level + 1);
 			const subclass = (level === 0 && submenu.firstElementChild) ? 'dropdown' : '';
@@ -577,15 +539,13 @@ return baseclass.extend({
 
 			const fullClass = subclass;
 
-		
 			const iconClass = level === 0 ? this.generateMenuIconClass(child.name) : '';
 			const finalLinkClass = linkclass + (iconClass ? ' ' + iconClass : '');
-			
+
 			const li = E('li', { 'class': fullClass }, [
-				E('a', { 'class': finalLinkClass, 'href': linkurl }, [_(child.title)]),
+				E('a', { 'class': finalLinkClass, 'href': linkurl }, [ this.menuDisplayName(child) ]),
 				submenu
 			]);
-
 
 			if (level === 0 && submenu.firstElementChild) {
 				const isActive = ((L.env.dispatchpath[1] == child.name) && (L.env.dispatchpath[0] == tree.name));
@@ -594,7 +554,6 @@ return baseclass.extend({
 				}
 			}
 
-	
 			if (level === 1) {
 				const isActive = ((L.env.dispatchpath[2] == child.name) && (L.env.dispatchpath[1] == tree.name));
 				if (isActive) {
@@ -609,7 +568,6 @@ return baseclass.extend({
 					e.stopPropagation();
 					const dropdown = li;
 					const isOpen = dropdown.classList.contains('open');
-					
 
 					document.querySelectorAll('#topmenu-mobile .dropdown.open').forEach(item => {
 						if (item !== dropdown) {
@@ -633,75 +591,5 @@ return baseclass.extend({
 		}
 
 		return ul;
-	},
-
-	renderModeMenu(tree) {
-		const ul = document.querySelector('#modemenu');
-		if (!ul) {
-			return;
-		}
-		ul.innerHTML = '';
-		const children = ui.menu.getChildren(tree);
-
-		const isWide = this.isWideScreen();
-		if (isWide) {
-			ul.style.display = 'none';
-		}
-
-		children.forEach((child, index) => {
-			const isActive = L.env.requestpath.length
-				? child.name === L.env.requestpath[0]
-				: index === 0;
-
-			if (!isWide) {
-				ul.appendChild(E('li', { 'class': isActive ? 'active' : '' }, [
-					E('a', { 'href': L.url(child.name) }, [ _(child.title) ])
-				]));
-			}
-
-			if (isActive) {
-
-				if (isWide) {
-				this.renderMainMenu(child, child.name);
-				} else {
-					this.renderMobileMenu(child, child.name);
-				}
-			}
-		});
-
-		if (!isWide && ul.children.length > 1)
-			ul.style.display = '';
-
-		setTimeout(() => {
-			this.autoExpandActiveMenu();
-		}, 100);
-	},
-
-	autoExpandActiveMenu() {
-		const currentPath = L.env.requestpath.join('/');
-		const menuItems = document.querySelectorAll('#topmenu .dropdown');
-		
-		menuItems.forEach(menuItem => {
-			const menuLink = menuItem.querySelector('a.menu');
-			const menuText = menuLink.textContent.trim();
-			
-			if (currentPath.includes(menuText.toLowerCase()) || 
-				this.isCurrentMenuActive(menuItem, currentPath)) {
-				menuItem.classList.add('open');
-			}
-		});
-
-
-	},
-
-	isCurrentMenuActive(menuItem, currentPath) {
-		const submenuLinks = menuItem.querySelectorAll('.dropdown-menu a');
-		for (let link of submenuLinks) {
-			const href = link.getAttribute('href');
-			if (href && currentPath.includes(href.replace('#', ''))) {
-				return true;
-			}
-		}
-		return false;
 	}
 });

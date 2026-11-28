@@ -576,9 +576,12 @@ def main():
         rc |= apply_fwx(a.fwx)
         rc |= apply_connlock(a.fwx)
         rc |= apply_init(a.fwx)
-    rc |= apply_netlink_limit(a.fwx)
-    rc |= apply_rm_hnat(a.fwx)
-    rc |= apply_accel(a.fwx)
+        # be72: 这三个都依赖 fwx 树（含 fwxd），--hnat-only 调用时 a.fwx=None
+        # v2.0.0 前放在块外，3.2（--hnat）调用时 TypeError 被 || warn 吞掉，
+        # 导致 accel 位图/hook_toggle 联动/netlink 上限静默缺失（build-46）。
+        rc |= apply_netlink_limit(a.fwx)
+        rc |= apply_rm_hnat(a.fwx)
+        rc |= apply_accel(a.fwx)
     sys.exit(0 if rc == 0 else 2)
 
 
