@@ -1,0 +1,131 @@
+<%#
+ 流量与会话统计（设计基准 docs/ui-redesign.html #v-traffic + #v-session）
+ 真实数据源（24.10.4 实测）：
+   - get_dashboard_common.system_status.flow（今日 ↑↓ 总量）
+   - get_daily_top_users（今日用户流量榜，per-user up/down bytes）
+   - get_history_session（会话曲线：current/avg/peak/list）
+ 注：get_today_traffic / get_history_traffic 在 24.10.4 不存在（ubus 返 4000），
+     因此不显示「逐小时柱图 / 30 天历史」——没有真实数据就不画。
+-%>
+<%+header%>
+
+<div class="fwx-traffic">
+	<div class="ds-grid ds-g3">
+		<div class="ds-card">
+			<div class="kpi-label">今日上传</div>
+			<div class="kpi" id="t-up">--</div>
+			<div class="sub-text">全部设备累计</div>
+		</div>
+		<div class="ds-card">
+			<div class="kpi-label">今日下载</div>
+			<div class="kpi" id="t-down">--</div>
+			<div class="sub-text">全部设备累计</div>
+		</div>
+		<div class="ds-card">
+			<div class="kpi-label">当前会话</div>
+			<div class="kpi"><span id="t-cur">--</span><small>条</small></div>
+			<div class="sub-text">均值 <span id="t-avg">--</span> · 峰值 <span id="t-peak">--</span></div>
+		</div>
+	</div>
+
+	<div class="ds-grid ds-col2">
+		<div class="ds-card">
+			<h3>今日流量排行（按设备）</h3>
+			<div class="bars" id="t-ranks"><div class="sub-text">加载中…</div></div>
+		</div>
+		<div class="ds-card">
+			<h3>会话曲线 <span class="ds-tag ds-tag-mute" id="t-range">最近 60 分钟</span></h3>
+			<svg id="t-chart" viewBox="0 0 300 110" preserveAspectRatio="none" style="width:100%;height:130px;"><polyline id="t-line" fill="none" stroke="var(--ds-accent, #0a7cff)" stroke-width="2" points=""></polyline></svg>
+			<div class="ds-hint">点数 <span id="t-points">--</span> · 数据来自内核 DPI 会话统计</div>
+		</div>
+	</div>
+</div>
+
+<style>
+.fwx-traffic .ds-grid { display: grid; gap: 13px; margin-bottom: 13px; }
+.fwx-traffic .ds-g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fwx-traffic .ds-col2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fwx-traffic .ds-card {
+	background: var(--ds-panel, #fff); border: 1px solid var(--ds-line, rgba(31,35,40,.1));
+	border-radius: var(--ds-r-lg, 16px); padding: 17px 19px;
+}
+.fwx-traffic .ds-card h3 { font-size: 12.5px; font-weight: 500; color: var(--ds-text2, #59636e); margin: 0 0 13px; display: flex; gap: 8px; align-items: center; }
+.fwx-traffic .kpi-label { font-size: 11.5px; color: var(--ds-text2, #59636e); margin-bottom: 9px; }
+.fwx-traffic .kpi { font-size: 22px; font-weight: 500; color: var(--ds-text, #1f2328); }
+.fwx-traffic .kpi small { font-size: 11.5px; color: var(--ds-text2, #59636e); margin-left: 3px; }
+.fwx-traffic .sub-text, .fwx-traffic .ds-hint { font-size: 11px; color: var(--ds-text3, #818b98); margin-top: 6px; }
+.fwx-traffic .bars { display: flex; flex-direction: column; gap: 11px; }
+.fwx-traffic .bar-row { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 10px; }
+.fwx-traffic .bar-row .nm { font-size: 12px; color: var(--ds-text2, #59636e); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fwx-traffic .track { height: 7px; background: var(--ds-panel2, #f6f8fa); border-radius: 99px; overflow: hidden; }
+.fwx-traffic .fill { height: 100%; border-radius: 99px; background: var(--ds-accent, #0a7cff); }
+.fwx-traffic .bar-row .val { font-size: 11px; color: var(--ds-text3, #818b98); white-space: nowrap; }
+.fwx-traffic .ds-tag { padding: 1px 8px; border-radius: 99px; font-size: 11px; }
+.fwx-traffic .ds-tag-mute { background: var(--ds-panel2, #f6f8fa); color: var(--ds-text2, #59636e); }
+@media (max-width: 900px) { .fwx-traffic .ds-g3 { grid-template-columns: 1fr; } .fwx-traffic .ds-col2 { grid-template-columns: 1fr; } }
+</style>
+
+<script>
+(function () {
+	var $ = function (id) { return document.getElementById(id); };
+	function api(url, params) {
+		return new Promise(function (resolve) {
+			try { new XHR().get(url, params, function (x, b) { try { resolve(JSON.parse(b)); } catch (e) { resolve(null); } }); }
+			catch (e) { resolve(null); }
+		});
+	}
+	function fmtB(b) {
+		b = Number(b) || 0;
+		if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' G';
+		if (b >= 1048576) return (b / 1048576).toFixed(1) + ' M';
+		if (b >= 1024) return (b / 1024).toFixed(0) + ' K';
+		return b + ' B';
+	}
+
+	// 今日总量（真实 flow 字段）
+	api('<%=url("admin/fwx/get_dashboard_common")%>', {}).then(function (r) {
+		var sys = r && r.data && r.data.system_status;
+		var f = (sys && sys.flow) || {};
+		$('t-up').textContent = fmtB(f.today_up);
+		$('t-down').textContent = fmtB(f.today_down);
+	});
+
+	// 今日用户流量排行（真实 per-user 累计）
+	api('<%=url("admin/fwx/get_daily_top_users")%>', {}).then(function (r) {
+		var users = (r && r.data && r.data.users) || [];
+		var box = $('t-ranks');
+		if (!users.length) { box.innerHTML = '<div class="sub-text">今日暂无记录</div>'; return; }
+		var top = users.slice(0, 8);
+		var max = Math.max.apply(null, top.map(function (u) { return Number(u.total_bytes) || 0; })) || 1;
+		box.innerHTML = top.map(function (u) {
+			var nm = u.nickname || u.hostname || u.mac;
+			var tb = Number(u.total_bytes) || 0;
+			return '<div class="bar-row"><span class="nm">' + nm + '</span>' +
+				'<div class="track"><div class="fill" style="width:' + Math.round(tb * 100 / max) + '%"></div></div>' +
+				'<span class="val">↓' + fmtB(u.down_bytes) + '</span></div>';
+		}).join('');
+	});
+
+	// 会话曲线（真实 history_session）
+	api('<%=url("admin/session_stat/get_history_session")%>', {}).then(function (r) {
+		var d = r && r.data;
+		if (!d || !d.list) { return; }
+		$('t-cur').textContent = d.current != null ? d.current : '--';
+		$('t-avg').textContent = d.avg != null ? d.avg : '--';
+		$('t-peak').textContent = d.peak != null ? d.peak : '--';
+		$('t-range').textContent = d.range === 'hour' ? ('最近 ' + (d.minutes || 60) + ' 分钟') : ('最近 ' + (d.minutes || 60) + ' 分钟');
+		var arr = d.list || [];
+		$('t-points').textContent = arr.length;
+		if (!arr.length) return;
+		var max = Math.max.apply(null, arr) || 1;
+		var pts = arr.map(function (v, i) {
+			var x = (i * 300 / Math.max(1, arr.length - 1)).toFixed(1);
+			var y = (105 - (Number(v) || 0) * 100 / max).toFixed(1);
+			return x + ',' + y;
+		}).join(' ');
+		$('t-line').setAttribute('points', pts);
+	});
+})();
+</script>
+
+<%+footer%>

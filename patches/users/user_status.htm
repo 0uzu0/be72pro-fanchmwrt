@@ -1,0 +1,185 @@
+<%#
+ 终端列表（设计基准 docs/ui-redesign.html #v-users）
+ 数据：get_all_users（flag=3：mac/ip/hostname/nickname/online/rates/applist，全部真实）
+      set_nickname（改名，写 uci user_info 列表，实时生效）
+-%>
+<%+header%>
+
+<div class="fwx-users">
+	<div class="ds-card ds-toolbar">
+		<div class="ds-search">
+			<input class="inp" id="u-search" placeholder="搜索名称 / IP / MAC">
+		</div>
+		<div class="ds-filter">
+			<button class="chip active" data-f="all">全部</button>
+			<button class="chip" data-f="online">在线</button>
+			<button class="chip" data-f="offline">离线</button>
+		</div>
+		<div class="ds-stat" id="u-stat">--</div>
+	</div>
+
+	<div class="ds-card">
+		<table class="tbl">
+			<thead>
+				<tr><th>设备</th><th>IP</th><th>状态</th><th>实时速率</th><th>今日流量</th><th>操作</th></tr>
+			</thead>
+			<tbody id="u-body"><tr><td colspan="6" class="ds-hint">加载中…</td></tr></tbody>
+		</table>
+		<div class="ds-pager">
+			<button class="btn btn-ghost" id="u-prev">上一页</button>
+			<span id="u-page">1 / 1</span>
+			<button class="btn btn-ghost" id="u-next">下一页</button>
+		</div>
+	</div>
+</div>
+
+<style>
+.fwx-users .ds-card {
+	background: var(--ds-panel, #fff);
+	border: 1px solid var(--ds-line, rgba(31,35,40,.1));
+	border-radius: var(--ds-r-lg, 16px);
+	padding: 17px 19px;
+	margin-bottom: 13px;
+}
+.fwx-users .ds-toolbar { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+.fwx-users .ds-search { flex: 1; min-width: 200px; }
+.fwx-users .inp {
+	width: 100%; box-sizing: border-box; padding: 8px 12px; font-size: 12.5px;
+	border: 1px solid var(--ds-line2, rgba(31,35,40,.16)); border-radius: 9px;
+	background: var(--ds-panel, #fff); color: var(--ds-text, #1f2328);
+}
+.fwx-users .ds-filter { display: flex; gap: 6px; }
+.fwx-users .chip {
+	padding: 6px 13px; border-radius: 99px; border: 1px solid var(--ds-line, rgba(31,35,40,.1));
+	background: transparent; color: var(--ds-text2, #59636e); font-size: 12px; cursor: pointer;
+}
+.fwx-users .chip.active { background: var(--ds-accent, #0a7cff); border-color: transparent; color: #fff; }
+.fwx-users .ds-stat { font-size: 12px; color: var(--ds-text3, #818b98); }
+.fwx-users .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.fwx-users .tbl th {
+	text-align: left; font-weight: 500; color: var(--ds-text2, #59636e); font-size: 11.5px;
+	padding: 9px 10px; border-bottom: 1px solid var(--ds-line, rgba(31,35,40,.1));
+}
+.fwx-users .tbl td { padding: 10px; border-bottom: 1px solid var(--ds-line, rgba(31,35,40,.06)); color: var(--ds-text, #1f2328); }
+.fwx-users .u-name { display: flex; align-items: center; gap: 9px; }
+.fwx-users .u-ico {
+	width: 28px; height: 28px; border-radius: 9px; background: var(--ds-panel2, #f6f8fa);
+	display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--ds-text2, #59636e);
+}
+.fwx-users .u-sub { font-size: 10.5px; color: var(--ds-text3, #818b98); }
+.fwx-users .tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; }
+.fwx-users .tag.on { background: rgba(63,185,80,.12); color: #2f9e44; }
+.fwx-users .tag.off { background: var(--ds-panel2, #f6f8fa); color: var(--ds-text3, #818b98); }
+.fwx-users .btn {
+	padding: 5px 12px; border: none; border-radius: 8px; cursor: pointer; font-size: 11.5px;
+	background: var(--ds-accent, #0a7cff); color: #fff;
+}
+.fwx-users .btn-ghost { background: transparent; color: var(--ds-text2, #59636e); border: 1px solid var(--ds-line2, rgba(31,35,40,.16)); }
+.fwx-users .ds-pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 13px; font-size: 12px; color: var(--ds-text2, #59636e); }
+.fwx-users .ds-hint { text-align: center; color: var(--ds-text3, #818b98); font-size: 12px; padding: 14px; }
+</style>
+
+<script>
+(function () {
+	var $ = function (id) { return document.getElementById(id); };
+	var BASE = '<%=url("admin/fwx/")%>';
+	var page = 1, pageSize = 8, totalPage = 1, curFilter = 'all', keyword = '';
+
+	function api(name, params) {
+		return new Promise(function (resolve) {
+			try { new XHR().get(BASE + name, params, function (x, b) { try { resolve(JSON.parse(b)); } catch (e) { resolve(null); } }); }
+			catch (e) { resolve(null); }
+		});
+	}
+	function post(name, data) {
+		return new Promise(function (resolve) {
+			try { new XHR().post(BASE + name, data, function (x, b) { try { resolve(JSON.parse(b)); } catch (e) { resolve(null); } }); }
+			catch (e) { resolve(null); }
+		});
+	}
+	function esc(s) {
+		return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+			return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+		});
+	}
+	function fmtB(b) {
+		b = Number(b) || 0;
+		if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' G';
+		if (b >= 1048576) return (b / 1048576).toFixed(1) + ' M';
+		if (b >= 1024) return (b / 1024).toFixed(0) + ' K';
+		return b + ' B';
+	}
+	function fmtR(bps) {
+		bps = Number(bps) || 0;
+		if (bps >= 1048576) return (bps / 1048576).toFixed(1) + ' M/s';
+		if (bps >= 1024) return (bps / 1024).toFixed(0) + ' K/s';
+		return bps + ' B/s';
+	}
+
+	function load() {
+		api('get_all_users', { flag: 3, page: page, page_size: pageSize }).then(function (r) {
+			var d = r && r.data;
+			if (!d) { $('u-body').innerHTML = '<tr><td colspan="6" class="ds-hint">加载失败</td></tr>'; return; }
+			var list = d.list || [];
+			totalPage = d.total_page || 1;
+			var online = list.filter(function (x) { return Number(x.online) === 1; }).length;
+			$('u-stat').textContent = '在线 ' + online + ' / 本页 ' + list.length + ' 台';
+			$('u-page').textContent = page + ' / ' + totalPage;
+
+			var rows = list.filter(function (x) {
+				var on = Number(x.online) === 1;
+				if (curFilter === 'online' && !on) return false;
+				if (curFilter === 'offline' && on) return false;
+				if (keyword) {
+					var hay = (x.nickname || '') + (x.hostname || '') + (x.ip || '') + (x.mac || '');
+					if (hay.toLowerCase().indexOf(keyword.toLowerCase()) < 0) return false;
+				}
+				return true;
+			});
+			if (!rows.length) { $('u-body').innerHTML = '<tr><td colspan="6" class="ds-hint">没有匹配的设备</td></tr>'; return; }
+
+			$('u-body').innerHTML = rows.map(function (x) {
+				var name = x.nickname || x.hostname || x.mac;
+				var on = Number(x.online) === 1;
+				var up = Number(x.up_rate) || 0, down = Number(x.down_rate) || 0;
+				return '<tr>' +
+					'<td><div class="u-name"><div class="u-ico">' + esc(String(name).slice(0, 1).toUpperCase()) + '</div>' +
+					'<div><div>' + esc(name) + '</div><div class="u-sub">' + esc(x.mac) + '</div></div></div></td>' +
+					'<td>' + esc(x.ip || '--') + '</td>' +
+					'<td><span class="tag ' + (on ? 'on' : 'off') + '">' + (on ? '在线' : '离线') + '</span></td>' +
+					'<td>↓ ' + fmtR(down) + '<div class="u-sub">↑ ' + fmtR(up) + '</div></td>' +
+					'<td>↓ ' + fmtB(x.today_down_bytes) + '<div class="u-sub">↑ ' + fmtB(x.today_up_bytes) + '</div></td>' +
+					'<td><button class="btn" data-mac="' + esc(x.mac) + '" data-name="' + esc(x.nickname || '') + '">改名</button></td>' +
+					'</tr>';
+			}).join('');
+
+			Array.prototype.forEach.call(document.querySelectorAll('.fwx-users .btn[data-mac]'), function (b) {
+				b.addEventListener('click', function () {
+					var mac = b.getAttribute('data-mac');
+					var old = b.getAttribute('data-name') || '';
+					var nn = prompt('给这台设备起个名字（留空则清除）：', old);
+					if (nn === null) return;
+					post('set_nickname', { mac: mac, nickname: nn }).then(function () { load(); });
+				});
+			});
+		});
+	}
+
+	$('u-search').addEventListener('input', function () { keyword = this.value.trim(); load(); });
+	Array.prototype.forEach.call(document.querySelectorAll('.fwx-users .chip'), function (c) {
+		c.addEventListener('click', function () {
+			Array.prototype.forEach.call(document.querySelectorAll('.fwx-users .chip'), function (x) { x.classList.remove('active'); });
+			c.classList.add('active');
+			curFilter = c.getAttribute('data-f');
+			load();
+		});
+	});
+	$('u-prev').addEventListener('click', function () { if (page > 1) { page--; load(); } });
+	$('u-next').addEventListener('click', function () { if (page < totalPage) { page++; load(); } });
+
+	load();
+	setInterval(load, 10000);
+})();
+</script>
+
+<%+footer%>
