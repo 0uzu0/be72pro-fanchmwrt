@@ -46,7 +46,9 @@ MK_TOP_REL = FWXD_TOP_REL + "/Makefile"
 NEW_FILES = ["fwx_firewall.c", "fwx_firewall.h", "fwx_ext_compat.c",
              "mac_blacklist.config",   # named section base，key 与 25.12 一致
              "fwx_record.config",      # 记录白名单的 whitelist 节（25.12 才有）
-             "feature.cfg"]            # v26.4.10 社区特征库（305 条，去重清洗版）
+             "feature.cfg",
+             "fwx_custom_feature.c",   # be72: 自定义特征（25.12 原版移植，v1.8.0）
+             "fwx_custom_feature.h"]            # v26.4.10 社区特征库（305 条，去重清洗版）
 
 # 分派表前的声明（fwx_ubus.c 里这些函数没有定义，只有声明后才不会被
 # -Werror=implicit-function-declaration 判死）。注意：fwx_ext_record_whitelisted
@@ -69,6 +71,11 @@ struct json_object *fwx_api_add_mac_blacklist(struct json_object *req_obj);
 struct json_object *fwx_api_del_mac_blacklist(struct json_object *req_obj);
 struct json_object *fwx_api_get_system_base_info(struct json_object *req_obj);
 struct json_object *fwx_api_get_parental_control_detail(struct json_object *req_obj);
+/* ---- be72: 特征库信息 / 自定义特征（fwx_custom_feature.c 移植自 25.12） ---- */
+struct json_object *fwx_api_get_feature_info(struct json_object *req_obj);
+struct json_object *fwx_api_get_custom_feature(struct json_object *req_obj);
+struct json_object *fwx_api_get_custom_feature_class_list(struct json_object *req_obj);
+struct json_object *fwx_api_set_custom_feature(struct json_object *req_obj);
 
 """
 
@@ -92,6 +99,11 @@ TABLE_ROWS = """    /* ---- be72: 防火墙 / 引导状态 ---- */
     {"del_mac_blacklist", fwx_api_del_mac_blacklist, 1, FWX_API_METHOD_POST},
     {"get_system_base_info", fwx_api_get_system_base_info, 0, FWX_API_METHOD_GET},
     {"get_parental_control_detail", fwx_api_get_parental_control_detail, 0, FWX_API_METHOD_GET},
+    /* ---- be72: 特征库信息 / 自定义特征 ---- */
+    {"get_feature_info", fwx_api_get_feature_info, 0, FWX_API_METHOD_GET},
+    {"get_custom_feature", fwx_api_get_custom_feature, 0, FWX_API_METHOD_GET},
+    {"get_custom_feature_class_list", fwx_api_get_custom_feature_class_list, 0, FWX_API_METHOD_GET},
+    {"set_custom_feature", fwx_api_set_custom_feature, 1, FWX_API_METHOD_POST},
 """
 
 # 白名单过滤：add_user_record 开头（fwx_user.c，全文件唯一）
@@ -251,6 +263,28 @@ def apply_batch2(uc_path):
 def s_count(src, needle):
     return src.count(needle)
 
+# ---- be72 batch3b: main.c 自定义特征下发 ----
+MAIN_ANCHOR = "\tfclose(fp);\n    if (fwx_nl_feature_load_done() < 0){"
+MAIN_INSERT = ("\tfclose(fp);\n"    "\t/* be72: 自定义特征（/etc/fwxd/custom_feature.cfg）随官方特征一并下发内核。 */\n"    "\t{\n"    "\t\textern int fwx_custom_feature_send_to_kernel(int (*send_feature)(char *));\n"    "\t\tint custom_count = fwx_custom_feature_send_to_kernel(fwx_nl_add_feature);\n"    "\t\tif (custom_count > 0)\n"    "\t\t\tfeature_count += custom_count;\n"    "\t}\n"    "    if (fwx_nl_feature_load_done() < 0){")
+MAIN_MARK = "be72: 自定义特征"
+
+
+def apply_main_custom(main_path):
+    with open(main_path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        src = f.read()
+    if MAIN_MARK in src:
+        print("  [skip] main.c 已含自定义特征下发")
+        return 0
+    if src.count(MAIN_ANCHOR) != 1:
+        print("  [!] main.c 锚点出现 %d 次，未注入自定义特征下发" % src.count(MAIN_ANCHOR))
+        return 2
+    src = src.replace(MAIN_ANCHOR, MAIN_INSERT, 1)
+    with open(main_path, "w", encoding="utf-8", errors="surrogateescape") as f:
+        f.write(src)
+    print("  [+] main.c：自定义特征已随官方特征下发内核")
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__.strip())
@@ -332,6 +366,7 @@ def main():
 
     # ---------- 2b. batch2：base_data_path + 网口状态 ----------
     apply_batch2(ubus)
+    apply_main_custom(os.path.join(tree, FWXD_TOP_REL, "src", "main.c"))
 
     # ---------- 3. fwx_user.c：写入侧过滤 ----------
     user = os.path.join(tree, USER_REL)
@@ -362,7 +397,7 @@ def main():
         print("  [!] 找不到 rule_manager.lua，跳过黑名单执行链")
     else:
         with open(lua, "r", encoding="utf-8", errors="surrogateescape") as f:
-            ltext = f.read()
+            ltext = f.read().replace("\r\n", "\n")   # be72: vendor CRLF -> LF
         lchanged = False
 
         # 1) 常量（行尾有尾随空格，按行前缀匹配插入）
@@ -508,6 +543,103 @@ def main():
             with open(lua, "w", encoding="utf-8", errors="surrogateescape") as f:
                 f.write(ltext)
 
+    # ---------- 3c. rule_manager.lua：四类网络加速（accel_ids 同步） ----------
+    if "be72: 四类网络加速" in ltext:
+        print("  [skip] rule_manager 已含加速同步")
+    else:
+        RM_ACCEL_DEF_ANCHOR = "local function apply_record_enable(enable)"
+        RM_ACCEL_DEF_ADD = """-- be72: 四类网络加速（游戏/视频/下载/办公）—— uci fwx.accel.* -> /proc/sys/fwx/accel_ids
+local accel_ids_state = nil
+
+local function build_accel_id_list()
+    local on = {
+        game = get_uci_enable("fwx", "accel", "game"),
+        video = get_uci_enable("fwx", "accel", "video"),
+        download = get_uci_enable("fwx", "accel", "download"),
+        office = get_uci_enable("fwx", "accel", "office"),
+    }
+    local class_map = {
+        game = { "game" },
+        video = { "video" },
+        download = { "download" },
+        office = { "website", "tools", "finance" },
+    }
+    local active = {}
+    for key, classes in pairs(class_map) do
+        if on[key] == 1 then
+            for _, c in ipairs(classes) do
+                active[c] = 1
+            end
+        end
+    end
+    local ids = {}
+    local f = io.open("/etc/fwxd/feature.cfg", "r")
+    if not f then
+        return ids
+    end
+    local cur = nil
+    for line in f:lines() do
+        local ck = line:match("^#class%s+(%S+)")
+        if ck then
+            cur = ck
+        elseif cur and active[cur] and not line:find("^#") then
+            local appid = line:match("^(%d+)")
+            if appid then
+                ids[tonumber(appid)] = 1
+            end
+        end
+    end
+    f:close()
+    return ids
+end
+
+local function check_and_apply_accel()
+    local ids = build_accel_id_list()
+    local keys = {}
+    for id in pairs(ids) do
+        keys[#keys + 1] = id
+    end
+    table.sort(keys)
+    local list = table.concat(keys, ",")
+    if accel_ids_state == list then
+        return
+    end
+    local f = io.open("/proc/sys/fwx/accel_ids", "w")
+    if f then
+        f:write(list)
+        f:close()
+        log("Accel app_ids -> " .. (list == "" and "(empty)" or list))
+        accel_ids_state = list
+    end
+end
+"""
+        RM_ACCEL_CALL_ANCHOR = ("        end)" + chr(10)
+                                + "        " + chr(10)
+                                + "        if not ok then")
+        RM_ACCEL_CALL_ADD = ("        end)" + chr(10)
+                             + "        " + chr(10)
+                             + "        -- be72: 加速类别 -> app_id 位图同步（uci fwx.accel.*）" + chr(10)
+                             + "        local aok, aerr = pcall(check_and_apply_accel)" + chr(10)
+                             + "        if not aok then" + chr(10)
+                             + '            log("ERROR accel sync: " .. tostring(aerr))' + chr(10)
+                             + "        end")
+        RM_ACCEL_CALL_TAIL = """
+
+        -- be72: 加速类别 -> app_id 位图同步（uci fwx.accel.*）
+        local aok, aerr = pcall(check_and_apply_accel)
+        if not aok then
+            log("ERROR accel sync: " .. tostring(aerr))
+        end"""
+        if ltext.count(RM_ACCEL_DEF_ANCHOR) == 1 and ltext.count(RM_ACCEL_CALL_ANCHOR) == 1:
+            ltext = ltext.replace(RM_ACCEL_DEF_ANCHOR, RM_ACCEL_DEF_ADD + RM_ACCEL_DEF_ANCHOR, 1)
+            ltext = ltext.replace(RM_ACCEL_CALL_ANCHOR, RM_ACCEL_CALL_ADD, 1)
+            with open(lua, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(ltext)
+            print("  [+] rule_manager.lua：四类加速同步已接入")
+        else:
+            print("  [!] rule_manager 加速同步锚点未命中（def=%d, call=%d）" % (
+                ltext.count(RM_ACCEL_DEF_ANCHOR), ltext.count(RM_ACCEL_CALL_ANCHOR)))
+
     # ---------- 4. src/Makefile：OBJS ----------
     mk = os.path.join(tree, MK_REL)
     if not os.path.isfile(mk):
@@ -522,7 +654,7 @@ def main():
         hit = False
         for line in mk_text.splitlines(True):
             if line.startswith("OBJS:="):
-                new_line = line.rstrip("\n") + " fwx_firewall.o fwx_ext_compat.o\n"
+                new_line = line.rstrip("\n") + " fwx_firewall.o fwx_ext_compat.o fwx_custom_feature.o\n"
                 mk_text = mk_text.replace(line, new_line, 1)
                 hit = True
                 break

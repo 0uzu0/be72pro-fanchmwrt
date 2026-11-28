@@ -1,0 +1,122 @@
+<%+header%>
+
+<div class="accel-page">
+	<h2 class="form-title"><%:Network Acceleration%></h2>
+	<p class="form-desc"><%:Enable per-category acceleration: traffic of enabled categories skips deep DPI parsing and audit recording, reducing CPU usage. Note: accelerated categories no longer participate in app filtering / blacklist / audit detail.%></p>
+
+	<div class="accel-grid">
+		<div class="fwx-form-card accel-card" id="card-game">
+			<div class="accel-head">
+				<div>
+					<div class="accel-name"><%:Game Acceleration%></div>
+					<div class="form-desc"><%:Lower latency for game traffic under load.%></div>
+				</div>
+				<label class="switch">
+					<input type="checkbox" id="sw-game">
+					<span class="slider"></span>
+				</label>
+			</div>
+		</div>
+		<div class="fwx-form-card accel-card" id="card-video">
+			<div class="accel-head">
+				<div>
+					<div class="accel-name"><%:Video Acceleration%></div>
+					<div class="form-desc"><%:More CPU headroom for video streams.%></div>
+				</div>
+				<label class="switch">
+					<input type="checkbox" id="sw-video">
+					<span class="slider"></span>
+				</label>
+			</div>
+		</div>
+		<div class="fwx-form-card accel-card" id="card-download">
+			<div class="accel-head">
+				<div>
+					<div class="accel-name"><%:Download Acceleration%></div>
+					<div class="form-desc"><%:Better throughput for bulk transfers under load.%></div>
+				</div>
+				<label class="switch">
+					<input type="checkbox" id="sw-download">
+					<span class="slider"></span>
+				</label>
+			</div>
+		</div>
+		<div class="fwx-form-card accel-card" id="card-office">
+			<div class="accel-head">
+				<div>
+					<div class="accel-name"><%:Office Acceleration%></div>
+					<div class="form-desc"><%:Web / tools / finance categories get the fast path.%></div>
+				</div>
+				<label class="switch">
+					<input type="checkbox" id="sw-office">
+					<span class="slider"></span>
+				</label>
+			</div>
+		</div>
+	</div>
+
+	<div class="fwx-form-card">
+		<div class="form-desc" id="accel-state"><%:Loading ...%></div>
+		<div class="button-container">
+			<button class="btn submit-button" id="accel-save"><%:Save & Apply%></button>
+		</div>
+	</div>
+</div>
+
+<script>
+(function () {
+	var SET_URL = '<%=url([[admin]], [[fwx_accel]], [[set]])%>';
+	var STATE_URL = '<%=url([[admin]], [[fwx_accel]], [[status]])%>';
+	var KEYS = ['game', 'video', 'download', 'office'];
+
+	function stateText(hook) {
+		return hook === 'disabled'
+			? '<%:HNAT hook: disabled (audit on, accurate stats)%>'
+			: '<%:HNAT hook: enabled (hardware offload, DPI bypassed)%>';
+	}
+
+	function load() {
+		fetch(STATE_URL).then(function (r) { return r.json(); }).then(function (s) {
+			KEYS.forEach(function (k) {
+				var el = document.getElementById('sw-' + k);
+				if (el) el.checked = s[k] === 1;
+			});
+			var st = document.getElementById('accel-state');
+			if (st) st.textContent = stateText(s.hook);
+		}).catch(function () {
+			var st = document.getElementById('accel-state');
+			if (st) st.textContent = 'Load failed';
+		});
+	}
+
+	function save() {
+		var body = new URLSearchParams();
+		KEYS.forEach(function (k) {
+			var el = document.getElementById('sw-' + k);
+			body.append(k, el && el.checked ? '1' : '0');
+		});
+		fetch(SET_URL, { method: 'POST', body: body })
+			.then(function (r) { return r.json(); })
+			.then(function (resp) {
+				if (resp && resp.code === 2000) {
+					var st = document.getElementById('accel-state');
+					if (st) st.textContent = stateText(resp.data.hook);
+				}
+			});
+	}
+
+	var btn = document.getElementById('accel-save');
+	if (btn) btn.addEventListener('click', save);
+	load();
+})();
+</script>
+
+<style>
+.accel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.accel-card { margin-bottom: 0; }
+.accel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.accel-name { font-size: 15px; font-weight: 600; color: var(--text-color-highest, #111); }
+.accel-card .form-desc { margin-top: 6px; }
+</style>
+
+<%+footer%>

@@ -109,13 +109,14 @@ log "2/8 搬 fwx 包进源码树"
 # 装 network / system / firewall —— 已逐个核实它们只写标准 uci
 # （network.lan|wan、system、firewall.@defaults[0]），不碰锐捷私有拓扑。
 # firewall 的后端 api 由下面 2b 的 patch_fwxd_ext.py 补，否则页面打不开数据。
-# 不装 app-center —— 用户实测"没用"，直接从镜像里去掉（菜单随之消失）。
+# 不装 app-center / luci-app-fwx-network —— 用户要求普通模式直接删掉
+#   （网络设置页在网关模式下无用；fwxd 的 network API 保留，不影响其他页）。
 # 不装 fastnat —— 依赖 SFE 快速转发，锐捷这棵树用的是 HNAT，没有 SFE。
 APPS="luci-app-fwx-resources luci-app-fwx-dashboard luci-app-fwx-dashboard-setting \
 luci-app-fwx-user luci-app-fwx-user-record luci-app-fwx-appfilter luci-app-fwx-record \
 luci-app-fwx-record-whitelist luci-app-fwx-macfilter luci-app-fwx-mac-blacklist \
 luci-app-fwx-session-stat luci-app-fwx-traffic-stat luci-app-fwx-feature \
-luci-app-fwx-network luci-app-fwx-system luci-app-fwx-firewall"
+luci-app-fwx-accel luci-app-fwx-system luci-app-fwx-firewall"
 
 mkdir -p "$RJ/package/fcm"
 for m in libfwx_common fwxd fwx luci-theme-fanchmwrt; do
@@ -138,6 +139,11 @@ echo "  已放入 $(echo $APPS | wc -w) 个界面 + 3 个后端包 + 1 个主题
 mkdir -p "$RJ/package/kernel/fullconenat-nft"
 cp -r "$ROOT/patches/fullconenat-nft/." "$RJ/package/kernel/fullconenat-nft/"
 echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
+
+# 2a-3. 四类网络加速页（普通模式新增；仓库内维护）
+rm -rf "$RJ/package/fcm/luci-app-fwx-accel"
+cp -r "$ROOT/patches/accel/luci-app-fwx-accel" "$RJ/package/fcm/luci-app-fwx-accel"
+echo "  已放入 luci-app-fwx-accel（游戏/视频/下载/办公加速）"
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），
@@ -342,7 +348,7 @@ REQUIRED_SYMS=(
 	CONFIG_PACKAGE_luci-app-fwx-session-stat
 	CONFIG_PACKAGE_luci-app-fwx-traffic-stat
 	CONFIG_PACKAGE_luci-app-fwx-feature
-	CONFIG_PACKAGE_luci-app-fwx-network
+	CONFIG_PACKAGE_luci-app-fwx-accel
 	CONFIG_PACKAGE_luci-app-fwx-system
 	CONFIG_PACKAGE_luci-app-fwx-firewall
 	CONFIG_PACKAGE_kmod-nft-fullcone

@@ -25,6 +25,8 @@ HNAT_REL = "target/linux/mediatek/files-6.6/drivers/net/ethernet/mediatek/mtk_hn
 FWX_REL = "package/fcm/fwx/src/fwx_mac_filter.c"
 INIT_REL = "package/fcm/fwxd/files/fwx.init"
 FWX_MAIN_REL = "package/fcm/fwx/src/fwx_main.c"
+FWX_LOG_REL = "package/fcm/fwx/src/fwx_log.c"
+FWX_LOG_H_REL = "package/fcm/fwx/src/fwx_log.h"
 CONN_LOCK_ANCHOR = (
     "\tspin_lock(&af_conn_lock);\n"
     "   \tconn = af_conn_find_and_add(flow.src, flow.dst, flow.sport, flow.dport, flow.l4_protocol);\n"
@@ -409,7 +411,7 @@ def apply_rm_hnat(root):
     if not os.path.isfile(path):
         print("  [!] 找不到 %s" % RM_REL)
         return 2
-    src = read(path)
+    src = read(path).replace("\r\n", "\n")   # be72: vendor 的 rule_manager.lua 是 CRLF
     if RM_MARK in src:
         print("  [skip] rule_manager 已含 HNAT 联动")
         return 0
@@ -447,6 +449,120 @@ def apply_init(root):
     return 0 if ok else 2
 
 
+# ---------------------------------------------------------------- batch4: 四类加速（内核）
+# fwx_log.c：accel_ids sysctl（写入即解析为 app_id 位图）
+# fwx_main.c：钩子里命中加速位图的应用直接放行（跳过记录与过滤，省 CPU）
+ACCEL_LOG_ANCHOR = "int g_tcp_rst = 1;"
+ACCEL_LOG_ADD = """int g_tcp_rst = 1;
+
+/* be72: 四类网络加速（游戏/视频/下载/办公）。用户态（rule_manager）把开启类别的
+   app_id 列表写入 /proc/sys/fwx/accel_ids，写入时解析为位图；钩子里命中的应用
+   直接 NF_ACCEPT —— 跳过 DPI 深度解析、审计记录与过滤，降低 CPU 占用。
+   注意：开启加速的类别不再参与应用过滤/黑名单/审计，页面上有说明。 */
+#define FWX_ACCEL_BITMAP_SIZE 4096   /* 位图：32768 个 app_id */
+static char fwx_accel_ids[8192] = "";
+static unsigned char fwx_accel_bitmap[FWX_ACCEL_BITMAP_SIZE] = {0};
+
+static void fwx_accel_parse_ids(const char *s)
+{
+	int id, got;
+	const char *p = s;
+
+	memset(fwx_accel_bitmap, 0, sizeof(fwx_accel_bitmap));
+	while (*p) {
+		id = 0;
+		got = 0;
+		while (*p >= '0' && *p <= '9') {
+			id = id * 10 + (*p - '0');
+			got = 1;
+			p++;
+		}
+		if (got && id > 0 && id < 32768)
+			fwx_accel_bitmap[id >> 3] |= (unsigned char)(1u << (id & 7));
+		while (*p && (*p < '0' || *p > '9'))
+			p++;
+	}
+}
+
+static int fwx_accel_ids_handler(struct ctl_table *table, int write,
+				 void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret = proc_dostring(table, write, buffer, lenp, ppos);
+	if (write && ret == 0)
+		fwx_accel_parse_ids((const char *)table->data);
+	return ret;
+}
+
+int fwx_accel_test(int app_id)
+{
+	if (app_id <= 0 || app_id >= 32768)
+		return 0;
+	return (fwx_accel_bitmap[app_id >> 3] & (1u << (app_id & 7))) != 0;
+}
+"""
+ACCEL_SYSCTL_ANCHOR = """		.procname	= "tcp_rst","""
+ACCEL_SYSCTL_ADD = """		{
+			.procname	= "accel_ids",
+			.data		= &fwx_accel_ids,
+			.maxlen		= sizeof(fwx_accel_ids) - 1,
+			.mode		= 0644,
+			.proc_handler	= fwx_accel_ids_handler,
+		},
+		.procname	= "tcp_rst","""
+ACCEL_MARK = "be72: 四类网络加速"
+ACCEL_HOOK_ANCHOR = """		app_id = ct->fwx_data.app_id;"""
+ACCEL_HOOK_ADD = """		app_id = ct->fwx_data.app_id;
+		/* be72: 开了加速的类别直接放行（跳过记录与过滤），见 fwx_log.c */
+		if (fwx_accel_test(app_id))
+			return NF_ACCEPT;"""
+ACCEL_LOGH_ANCHOR = "extern int g_tcp_rst;"
+ACCEL_LOGH_ADD = "extern int g_tcp_rst;\nextern int fwx_accel_test(int app_id);"
+
+
+def apply_accel(root):
+    rc = 0
+    log_path = os.path.join(root, FWX_LOG_REL)
+    if not os.path.isfile(log_path):
+        print("  [!] 找不到 %s" % FWX_LOG_REL)
+        return 2
+    src = read(log_path)
+    todo = []
+    if ACCEL_MARK not in src:
+        if src.count(ACCEL_LOG_ANCHOR) != 1:
+            print("  [!] fwx_log.c 变量锚点未命中")
+            return 2
+        src = src.replace(ACCEL_LOG_ANCHOR, ACCEL_LOG_ADD, 1)
+        if src.count(ACCEL_SYSCTL_ANCHOR) != 1:
+            print("  [!] fwx_log.c sysctl 锚点未命中")
+            return 2
+        src = src.replace(ACCEL_SYSCTL_ANCHOR, ACCEL_SYSCTL_ADD, 1)
+        todo.append("fwx_log.c")
+    if todo:
+        write(log_path, src)
+    # fwx_main.c：钩子检查
+    main_path = os.path.join(root, FWX_MAIN_REL)
+    src = read(main_path)
+    if ACCEL_HOOK_ANCHOR in src and "fwx_accel_test(app_id)" not in src:
+        if src.count(ACCEL_HOOK_ANCHOR) != 1:
+            print("  [!] fwx_main.c 钩子锚点出现 %d 次" % src.count(ACCEL_HOOK_ANCHOR))
+            return 2
+        src = src.replace(ACCEL_HOOK_ANCHOR, ACCEL_HOOK_ADD, 1)
+        write(main_path, src)
+        todo.append("fwx_main.c")
+    # fwx_log.h：导出
+    h_path = os.path.join(root, FWX_LOG_H_REL)
+    src = read(h_path)
+    if ACCEL_LOGH_ANCHOR in src and "fwx_accel_test" not in src:
+        src = src.replace(ACCEL_LOGH_ANCHOR, ACCEL_LOGH_ADD, 1)
+        write(h_path, src)
+        todo.append("fwx_log.h")
+    if todo:
+        print("  [+] 四类加速内核位图：%s" % ",".join(todo))
+    else:
+        print("  [skip] 四类加速内核位图已是目标状态")
+    return rc
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hnat", metavar="TREE")
@@ -462,6 +578,7 @@ def main():
         rc |= apply_init(a.fwx)
     rc |= apply_netlink_limit(a.fwx)
     rc |= apply_rm_hnat(a.fwx)
+    rc |= apply_accel(a.fwx)
     sys.exit(0 if rc == 0 else 2)
 
 
