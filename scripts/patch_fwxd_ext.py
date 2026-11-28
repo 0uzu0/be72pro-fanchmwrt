@@ -342,12 +342,12 @@ def apply_host_fallback(ubus_path):
 INSERT_CPU_SAMPLE = '''    /* be72: CPU 占用改用 /proc/stat 两次采样 —— 原实现 top -n 1 | grep 'CPU:'
        在 busybox 的 top 里没有该格式，永远取不到值 -> cpu 恒 0（假数据）。
        首次调用无历史基线返回 0，页面轮询 5s 后即为真实值。 */
+    int cpu_usage = 0;
     {
         static unsigned long long be72_prev_total = 0;
         static unsigned long long be72_prev_idle = 0;
         unsigned long long u = 0, n = 0, ss = 0, idle = 0, iow = 0, irq = 0, sirq = 0, steal = 0;
         unsigned long long total = 0, idle_all = 0;
-        int cpu_usage = 0;
         FILE *sfp = fopen("/proc/stat", "r");
         if (sfp) {
             if (fscanf(sfp, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
@@ -364,8 +364,6 @@ INSERT_CPU_SAMPLE = '''    /* be72: CPU 占用改用 /proc/stat 两次采样 —
             }
             fclose(sfp);
         }
-        snprintf(buf, sizeof(buf), "%d", cpu_usage);
-        json_object_object_add(system_status, "cpu", json_object_new_string(buf));
     }'''
 # ---------------------------------------------------------------- batch6: CPU 采样
 # 原实现 top -n 1 | grep 'CPU:' 在 busybox 下取不到值（cpu 恒 0，假数据）。
