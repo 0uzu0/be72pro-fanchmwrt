@@ -175,6 +175,11 @@ cp -f "$ROOT/patches/dashboard/dashboard.htm" \
 	"$RJ/package/luci-app-fwx-dashboard/luasrc/view/fwx_dashboard/dashboard.htm"
 echo "  仪表盘已替换为 1:1 版（真实数据源）"
 
+# 2a-6. 上网审计页（设计稿 #v-records）+ 硬件加速联动状态（真实读 debugfs）
+cp -f "$ROOT/patches/audit/base_setting.htm" \
+	"$RJ/package/luci-app-fwx-record/luasrc/view/fwx_record/base_setting.htm"
+echo "  审计页已替换（含审计↔HNAT 联动状态）"
+
 
 # 2a-1. kmod-oaf 必须排除 —— 它会和 fwx.ko 死磕
 #   oaf.ko 由树里的 open-app-filter 包提供（build 目录 open-app-filter-*/oaf/src），

@@ -1,0 +1,157 @@
+<%#
+ 上网审计（设计基准 docs/ui-redesign.html #v-records）
+ 数据：get_record_base / set_record_base / record_action（全部真实）
+ 联动状态：/sys/kernel/debug/hnat/hook_toggle（rule_manager 按审计开关联动）
+-%>
+<%+header%>
+
+<%
+	local sys = require "luci.sys"
+	local hook_raw = sys.exec("cat /sys/kernel/debug/hnat/hook_toggle 2>/dev/null") or ""
+	hook_raw = hook_raw:gsub("%s+", "")
+	local hook_off = (hook_raw == "0")          -- 0 = 钩子关闭 = 包进内核 = 统计准确
+	local hook_known = (hook_raw == "0" or hook_raw == "1")
+%>
+
+<div class="fwx-audit">
+	<div class="ds-grid ds-col2">
+		<div class="ds-card">
+			<h3>记录设置</h3>
+			<div class="form-grid">
+				<label>记录开关</label>
+				<label class="switch"><input type="checkbox" id="rec-enable"><span class="slider"></span></label>
+				<label>应用最短有效时长(秒)</label>
+				<input class="inp" id="rec-app-valid" type="number" min="0">
+				<label>基础数据路径</label>
+				<input class="inp" id="rec-base-path">
+				<label>历史数据路径</label>
+				<input class="inp" id="rec-history-path">
+			</div>
+			<div class="ds-actions">
+				<button class="btn" id="rec-save">保存设置</button>
+			</div>
+		</div>
+
+		<div class="ds-card">
+			<h3>数据维护</h3>
+			<div class="kv"><span>已用数据</span><span id="rec-size">--</span></div>
+			<div class="kv"><span>历史数据路径</span><span id="rec-dpath">--</span></div>
+			<div class="kv"><span>审计状态</span><span id="rec-state" class="ds-tag ds-tag-mute">--</span></div>
+			<div class="ds-actions">
+				<button class="btn btn-danger" id="rec-clear">清空历史数据</button>
+			</div>
+			<div class="ds-hint">清空只删已落盘的历史记录，不影响当前在线统计。</div>
+		</div>
+	</div>
+
+	<div class="ds-card">
+		<h3>硬件加速联动 <span class="ds-tag <%= hook_off and "ds-tag-green" or "ds-tag-mute" %>" id="link-tag">
+			<%= hook_known and (hook_off and "钩子已关闭（统计准确）" or "钩子已开启（硬件加速）") or "内核钩子未就绪" %>
+		</span></h3>
+		<div class="kv"><span>HNAT 钩子状态</span><span id="link-hook"><%= hook_known and hook_raw or "unknown" %></span></div>
+		<div class="kv"><span>审计记录</span><span id="link-rec">--</span></div>
+		<div class="ds-hint">
+			联动规则（rule_manager 每个周期自动执行）：<br>
+			· 审计开启 → HNAT 钩子关闭（0），流量进 CPU 走 DPI，<b>统计准确、过滤生效</b>；<br>
+			· 审计关闭 → HNAT 钩子开启（1），硬件满速转发，<b>DPI 被旁路、统计停止</b>。<br>
+			当前值 <%= hook_known and ("<code>" .. hook_raw .. "</code>（disabled=0 / enabled=1）") or "读取失败（检查 /sys/kernel/debug/hnat/hook_toggle）" %>。
+		</div>
+	</div>
+</div>
+
+<style>
+.fwx-audit .ds-grid { display: grid; gap: 13px; margin-bottom: 13px; }
+.fwx-audit .ds-col2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fwx-audit .ds-card {
+	background: var(--ds-panel, #fff);
+	border: 1px solid var(--ds-line, rgba(31,35,40,.1));
+	border-radius: var(--ds-r-lg, 16px);
+	padding: 17px 19px;
+}
+.fwx-audit .ds-card h3 {
+	font-size: 12.5px; font-weight: 500; color: var(--ds-text2, #59636e);
+	margin: 0 0 13px; display: flex; align-items: center; gap: 8px;
+}
+.fwx-audit .form-grid { display: grid; grid-template-columns: 150px 1fr; gap: 11px 16px; align-items: center; font-size: 13px; }
+.fwx-audit .form-grid label { color: var(--ds-text2, #59636e); }
+.fwx-audit .inp {
+	width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 12.5px;
+	border: 1px solid var(--ds-line2, rgba(31,35,40,.16)); border-radius: 9px;
+	background: var(--ds-panel, #fff); color: var(--ds-text, #1f2328);
+}
+.fwx-audit .ds-actions { margin-top: 13px; display: flex; gap: 9px; }
+.fwx-audit .btn {
+	padding: 7px 16px; border: none; border-radius: 8px; cursor: pointer;
+	background: var(--ds-accent, #0a7cff); color: #fff; font-size: 12.5px;
+}
+.fwx-audit .btn-danger { background: #d33; }
+.fwx-audit .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 6px 0; }
+.fwx-audit .kv > span:first-child { color: var(--ds-text2, #59636e); }
+.fwx-audit .ds-tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; }
+.fwx-audit .ds-tag-green { background: rgba(63,185,80,.12); color: #2f9e44; }
+.fwx-audit .ds-tag-mute { background: var(--ds-panel2, #f6f8fa); color: var(--ds-text2, #59636e); }
+.fwx-audit .ds-hint { font-size: 11px; color: var(--ds-text3, #818b98); margin-top: 11px; line-height: 1.7; }
+.fwx-audit .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+.fwx-audit .switch input { opacity: 0; width: 0; height: 0; }
+.fwx-audit .slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 99px; transition: .2s; }
+.fwx-audit .slider::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.fwx-audit .switch input:checked + .slider { background: var(--ds-accent, #0a7cff); }
+.fwx-audit .switch input:checked + .slider::before { transform: translateX(18px); }
+@media (max-width: 900px) { .fwx-audit .ds-col2 { grid-template-columns: 1fr; } }
+</style>
+
+<script>
+(function () {
+	var $ = function (id) { return document.getElementById(id); };
+	function api(url, params) {
+		return new Promise(function (resolve) {
+			try { new XHR().get(url, params, function (x, b) { try { resolve(JSON.parse(b)); } catch (e) { resolve(null); } }); }
+			catch (e) { resolve(null); }
+		});
+	}
+	function post(url, data) {
+		return new Promise(function (resolve) {
+			try { new XHR().post(url, data, function (x, b) { try { resolve(JSON.parse(b)); } catch (e) { resolve(null); } }); }
+			catch (e) { resolve(null); }
+		});
+	}
+
+	function fill(d) {
+		if (!d || !d.data) return;
+		var v = d.data;
+		$('rec-enable').checked = Number(v.enable) === 1;
+		$('rec-app-valid').value = v.app_valid_time != null ? v.app_valid_time : '';
+		$('rec-base-path').value = v.base_data_path || '';
+		$('rec-history-path').value = v.history_data_path || '';
+		var sz = v.status && v.status.data_size != null ? (v.status.data_size + ' ' + (v.status.data_size_unit || '')) : '--';
+		$('rec-size').textContent = sz;
+		$('rec-dpath').textContent = v.history_data_path || '--';
+		var st = $('rec-state');
+		st.textContent = Number(v.enable) === 1 ? '记录中' : '已停止';
+		st.className = 'ds-tag ' + (Number(v.enable) === 1 ? 'ds-tag-green' : 'ds-tag-mute');
+		$('link-rec').textContent = Number(v.enable) === 1 ? '已开启（联动关闭 HNAT 钩子）' : '已关闭（HNAT 钩子可开启）';
+	}
+
+	api('<%=url("admin/internet_record/get_record_base")%>').then(fill);
+
+	$('rec-save').addEventListener('click', function () {
+		post('<%=url("admin/internet_record/set_record_base")%>', {
+			enable: $('rec-enable').checked ? 1 : 0,
+			app_valid_time: Number($('rec-app-valid').value) || 0,
+			base_data_path: $('rec-base-path').value || '',
+			history_data_path: $('rec-history-path').value || ''
+		}).then(function () {
+			api('<%=url("admin/internet_record/get_record_base")%>').then(fill);
+		});
+	});
+
+	$('rec-clear').addEventListener('click', function () {
+		if (!confirm('清空历史审计数据？此操作不可恢复。')) return;
+		post('<%=url("admin/internet_record/record_action")%>', { action: 'clear' }).then(function () {
+			api('<%=url("admin/internet_record/get_record_base")%>').then(fill);
+		});
+	});
+})();
+</script>
+
+<%+footer%>

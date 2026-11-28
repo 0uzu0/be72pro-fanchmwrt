@@ -25,6 +25,28 @@ local function hook_state()
 	return v
 end
 
+-- 真实读取内核位图条数（rule_manager 同步的结果）
+local function accel_id_count()
+	local f = io.open("/proc/sys/fwx/accel_ids", "r")
+	if not f then
+		return 0
+	end
+	local s = f:read("*a") or ""
+	f:close()
+	local n = 0
+	for _ in s:gmatch("%d+") do
+		n = n + 1
+	end
+	return n
+end
+
+-- 审计开关（fwx.record.enable）：审计开 = HNAT 钩子被联动关闭
+local function audit_enabled()
+	local uci = require "luci.model.uci"
+	local x = uci.cursor()
+	return tonumber(x:get("fwx", "record", "enable") or 0) or 0
+end
+
 local function accel_state()
 	local uci = require "luci.model.uci"
 	local x = uci.cursor()
@@ -36,7 +58,9 @@ local function accel_state()
 		video = on("video"),
 		download = on("download"),
 		office = on("office"),
-		hook = hook_state()
+		hook = hook_state(),
+		accel_ids = accel_id_count(),
+		audit = audit_enabled()
 	}
 end
 
