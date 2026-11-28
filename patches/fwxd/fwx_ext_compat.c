@@ -2021,3 +2021,57 @@ struct json_object *fwx_api_get_parental_control_detail(struct json_object *req_
     json_object_object_add(data_obj, "macfilter_rules", mf_rules);
     return fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
 }
+
+/* ---- be72: 特征库信息（v1.8.0 补函数体：v1.8.0 只加了声明与分派行，
+     链接时 undefined reference 导致 build-41 失败 —— 教训：加分派行必须
+     同步补函数体，自查脚本已入 CI 前置流程） ---- */
+struct json_object *fwx_api_get_feature_info(struct json_object *req_obj) {
+    struct json_object *resp;
+    struct json_object *data_obj;
+    char version[128] = {0};
+    int feature_count = 0;
+    FILE *fp;
+
+    (void)req_obj;
+
+    /* 版本：/etc/fwxd/feature.cfg 头部的 "#version xxx" */
+    fp = fopen("/etc/fwxd/feature.cfg", "r");
+    if (fp) {
+        char line[512] = {0};
+        while (fgets(line, sizeof(line), fp)) {
+            if (strncmp(line, "#version ", 9) == 0) {
+                char *v = line + 9;
+                char *e;
+                while (*v == ' ')
+                    v++;
+                e = v + strlen(v);
+                while (e > v && (e[-1] == '\n' || e[-1] == '\r'))
+                    e--;
+                *e = 0;
+                snprintf(version, sizeof(version), "%s", v);
+                break;
+            }
+        }
+        fclose(fp);
+    }
+    if (version[0] == 0)
+        snprintf(version, sizeof(version), "unknown");
+
+    /* 个数：内核已加载的特征条数（/proc/sys/fwx/feature_count） */
+    fp = fopen("/proc/sys/fwx/feature_count", "r");
+    if (fp) {
+        if (fscanf(fp, "%d", &feature_count) != 1)
+            feature_count = 0;
+        fclose(fp);
+    }
+
+    data_obj = json_object_new_object();
+    if (!data_obj)
+        return fwx_gen_api_response_data(API_CODE_ERROR, NULL);
+    json_object_object_add(data_obj, "version", json_object_new_string(version));
+    json_object_object_add(data_obj, "count", json_object_new_int(feature_count));
+    json_object_object_add(data_obj, "feature_count", json_object_new_int(feature_count));
+    resp = fwx_gen_api_response_data(API_CODE_SUCCESS, data_obj);
+    json_object_put(data_obj);
+    return resp;
+}

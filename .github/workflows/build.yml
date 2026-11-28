@@ -79,6 +79,19 @@ jobs:
             upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
           sudo timedatectl set-timezone "$TZ"
 
+      - name: Check fwxd API definitions
+        run: |
+          python3 - <<'PY'
+          import re, glob
+          s = open('scripts/patch_fwxd_ext.py', encoding='utf-8').read()
+          apis = re.findall(r'\{"([a-z_]+)", (fwx_api_[a-z_]+), (\d)', s)
+          bodies = [open(f, encoding='utf-8', errors='surrogateescape').read() for f in glob.glob('patches/fwxd/*.c')]
+          missing = [a for a, f, _ in apis if not any(('struct json_object *' + f + '(') in t for t in bodies)]
+          if missing:
+              raise SystemExit('分派表里有声明但缺函数体的 API: %s（build-41 的教训）' % missing)
+          print('fwxd API 定义检查通过：%d 个' % len(apis))
+          PY
+
       - name: Build
         env:
           WITH_KMOD: ${{ github.event.inputs.with_kmod == 'no' && '0' || '1' }}
