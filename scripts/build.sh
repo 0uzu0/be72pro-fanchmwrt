@@ -206,6 +206,13 @@ cp -f "$ROOT/patches/macfilter/rules.htm" \
 	"$RJ/package/luci-app-fwx-macfilter/luasrc/view/macfilter/rules.htm"
 cp -f "$ROOT/patches/appfilter/rules.htm" \
 	"$RJ/package/luci-app-fwx-appfilter/luasrc/view/appfilter/rules.htm"
+# macfilter controller 覆盖：rules 改 template（1:1 页生效）；删除依赖
+# fwxd 不存在 api（get_mf_status/get_mac_filter_user）的 advance/user 子页
+cp -f "$ROOT/patches/macfilter/macfilter.lua" \
+	"$RJ/package/luci-app-fwx-macfilter/luasrc/controller/macfilter.lua"
+# vendor 的 user/advance 子页调用 fwxd 不存在的接口（4000），页面本就空白 —— 删除
+rm -f "$RJ/package/luci-app-fwx-macfilter/luasrc/view/macfilter/user.htm" \
+	"$RJ/package/luci-app-fwx-macfilter/luasrc/view/macfilter/advance.htm"
 echo "  黑名单 / MAC 过滤 / 应用过滤已替换"
 
 # 2a-10. 系统设置（设计稿 #v-system：系统信息 + 主题模式）
