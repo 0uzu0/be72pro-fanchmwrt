@@ -308,6 +308,80 @@ def apply_connlock(root):
     return 0 if CONN_LOCK_FIXED in chk else 2
 
 
+# ---------------------------------------------------------------- 上报报文上限
+# 内核 af_send_msg_to_user() 里 `if (len >= MAX_FWX_NL_MSG_LEN) return -1;`
+# —— MAX_FWX_NL_MSG_LEN 只有 1024，而报文里除了 up_flow/down_flow 还塞了
+# visit_info（含 URL）。只要有点访问记录就超长，整条消息被**静默丢弃**：
+# 内核不发、Rmem 恒 0、fwxd 收不到 → 统计全零、访问记录 404、应用中心空白。
+# 实测（用户设备 90 秒采样）：Rmem/Drops 恒 0，全局小时统计 22 个全零。
+# fwxd 侧同一道门：MAX_FWX_NETLINK_MSG_LEN 也是 1024，接收缓冲 4096。
+# 三处一起放宽到 16384，并给超长加日志，避免以后再"无声失败"。
+NL_FWX_H = "package/fcm/fwx/src/fwx.h"
+NL_FWX_MAIN = "package/fcm/fwx/src/fwx_main.c"
+NL_FWXD_H = "package/fcm/fwxd/src/fwx_netlink.h"
+NL_FWXD_C = "package/fcm/fwxd/src/fwx_netlink.c"
+NL_MARK = "16384 /* be72pro: 原 1024 太窄"
+NL_LOG_MARK = "be72pro: 报文超长"
+
+
+def apply_netlink_limit(root):
+    todo = []
+
+    fh = os.path.join(root, NL_FWX_H)
+    if os.path.isfile(fh):
+        src = read(fh)
+        if NL_MARK not in src:
+            old = "#define MAX_FWX_NL_MSG_LEN 1024"
+            if old in src:
+                src = src.replace(old, "#define MAX_FWX_NL_MSG_LEN 16384 /* be72pro: 原 1024 太窄"
+                                     "，visit_info 一多就超长被丢弃 */", 1)
+                write(fh, src)
+                todo.append("fwx.h")
+
+    fm = os.path.join(root, NL_FWX_MAIN)
+    if os.path.isfile(fm):
+        src = read(fm)
+        if NL_LOG_MARK not in src:
+            old = ("\tif (len >= MAX_FWX_NL_MSG_LEN)\n"
+                   "\t\treturn -1;")
+            new = ("\tif (len >= MAX_FWX_NL_MSG_LEN) {\n"
+                   "\t\t/* be72pro: 报文超长以前是静默 return，排查时完全看不见 */\n"
+                   "\t\tprintk_ratelimited(KERN_WARNING \"fwx: \"\n"
+                   "\t\t\t\"be72pro: 报文超长 %d >= %d，本条统计被丢弃\\n\",\n"
+                   "\t\t\tlen, MAX_FWX_NL_MSG_LEN);\n"
+                   "\t\treturn -1;\n"
+                   "\t}")
+            if old in src:
+                src = src.replace(old, new, 1)
+                write(fm, src)
+                todo.append("fwx_main.c")
+
+    dh = os.path.join(root, NL_FWXD_H)
+    if os.path.isfile(dh):
+        src = read(dh)
+        if NL_MARK not in src:
+            old = "#define MAX_FWX_NETLINK_MSG_LEN 1024"
+            if old in src:
+                src = src.replace(old, "#define MAX_FWX_NETLINK_MSG_LEN 16384 /* be72pro: 原 1024 太窄 */", 1)
+                write(dh, src)
+                todo.append("fwx_netlink.h")
+
+    dc = os.path.join(root, NL_FWXD_C)
+    if os.path.isfile(dc):
+        src = read(dc)
+        if "#define MAX_NL_RCV_BUF_SIZE 4096" in src:
+            src = src.replace("#define MAX_NL_RCV_BUF_SIZE 4096",
+                              "#define MAX_NL_RCV_BUF_SIZE 16384 /* be72pro: 与报文上限一致 */", 1)
+            write(dc, src)
+            todo.append("fwx_netlink.c")
+
+    if not todo:
+        print("  [skip] netlink 报文上限已是目标状态")
+        return 0
+    print("  [+] netlink 报文上限 1024 -> 16384（%s）" % ",".join(todo))
+    return 0
+
+
 def apply_init(root):
     """降级版（无 fwx.ko）下别让 rule_manager 空转。"""
     path = os.path.join(root, INIT_REL)
@@ -345,6 +419,7 @@ def main():
         rc |= apply_fwx(a.fwx)
         rc |= apply_connlock(a.fwx)
         rc |= apply_init(a.fwx)
+    rc |= apply_netlink_limit(a.fwx)
     sys.exit(0 if rc == 0 else 2)
 
 

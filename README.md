@@ -448,6 +448,14 @@ v3 还处理了两件容易漏的事：
 `mode==2` 才比对 `user_mac`；`pc_status` 是否算「正在生效」还要看当日时段是否命中
 （`rule_manager` 里没有 `time_rule` 的规则从不生效，这里口径一致）。
 
+**上报报文上限（1024 太窄）**：内核 `af_send_msg_to_user()` 里
+`if (len >= MAX_FWX_NL_MSG_LEN) return -1;`，而这条报文除 `up_flow/down_flow`
+还塞了 `visit_info`（含 URL）。只要有点访问记录就超过 1024 字节，整条消息被
+**静默丢弃**（不打日志），表现为：流量统计全零、访问记录 404、应用中心空白，
+但 `/proc/net/af_client` 里速率正常。实测 90 秒采样：netlink `Rmem/Drops` 恒 0、
+全局小时统计 22 个全零。修法：内核与 fwxd 两侧上限一起放宽到 16384，并给超长
+加 `printk_ratelimited` —— 以后同类问题能立刻在 dmesg 里看到。
+
 **DPI 与硬件 offload 互斥**：本树 `kmod-mediatek_hnat` 会写
 `/etc/modules.d/20-mediatek_hnat` 开机自动加载，长连接几包后卸载到 PPE 硬件，
 后续数据包不再经过 netfilter —— 实测 800MB 下载，fwx 只数到开头几十 KB，
