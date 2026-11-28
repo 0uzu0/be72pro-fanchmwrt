@@ -465,7 +465,8 @@ static unsigned char fwx_accel_bitmap[FWX_ACCEL_BITMAP_SIZE] = {0};
 
 static void fwx_accel_parse_ids(const char *s)
 {
-	int id, got;
+	int id;
+	int got;
 	const char *p = s;
 
 	memset(fwx_accel_bitmap, 0, sizeof(fwx_accel_bitmap));
