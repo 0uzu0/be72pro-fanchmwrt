@@ -83,6 +83,23 @@ CUR_BUILD=$(cat "$MARKER_BUILD" 2>/dev/null || echo "未知")
 log "最新整合包：${URL##*/}  →  v${NEW_VER:-?} (build ${NEW_BUILD:-?})"
 log "当前组件版本：v$CUR_VER (build $CUR_BUILD)"
 
+# 同版本同构建号：没有可装的新东西（旧版脚本会静默重装一遍，看起来"没生效"）
+if [ -n "${NEW_VER:-}" ] && [ "$NEW_VER" = "$CUR_VER" ] && [ "${NEW_BUILD:-}" = "$CUR_BUILD" ]; then
+	echo
+	echo "已是最新：v$CUR_VER (build $CUR_BUILD)，没有可安装的新版本。"
+	echo "（Release 页面上出现更高的 b<构建号> 后再执行本命令）"
+	exit 0
+fi
+
+# 版本号倒退保护：远端版本比当前低时提醒（避免误装旧包），--force 可跳过
+if [ -n "${NEW_VER:-}" ] && [ -n "${CUR_VER:-}" ] && [ "$CUR_VER" != "未知" ]; then
+	LOWEST=$(printf '%s\n%s\n' "$NEW_VER" "$CUR_VER" | sort -V | head -1)
+	if [ "$LOWEST" = "$NEW_VER" ] && [ "$NEW_VER" != "$CUR_VER" ]; then
+		[ -n "${FORCE:-}" ] || die "远端版本 v$NEW_VER 低于当前 v$CUR_VER —— 疑似镜像未同步或版本回退，已中止（确认要装加 --force）"
+		log "！版本回退：v$NEW_VER < v$CUR_VER（--force 已确认）"
+	fi
+fi
+
 if [ "$CHECK_ONLY" = "1" ]; then
 	if [ -n "$NEW_VER" ] && [ "$NEW_VER" = "$CUR_VER" ] && [ "$NEW_BUILD" = "$CUR_BUILD" ]; then
 		echo "已是最新：v$CUR_VER (build $CUR_BUILD)。"
