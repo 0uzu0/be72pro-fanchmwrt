@@ -175,29 +175,45 @@ RB_INSERT = RB_ANCHOR + """
     }"""
 DS_ANCHOR = """    json_object_object_add(network_status, "wan", wan_obj);"""
 DS_INSERT = DS_ANCHOR + """
-    /* be72: 网口状态（仪表盘 port-status 卡片）。读 /sys/class/net 实时状态，
-       WAN 的判定：pppoe-wan / eth2.1（uci 的 wan 设备） */
+    /* be72: 网口状态（仪表盘 port-status 卡片）。
+       只列用户可见口：WAN（pppoe-wan 优先，否则 eth2.1）、lan1-4、eth1；
+       eth2.2 是交换机 CPU 口（内部 trunk），不展示。
+       up 用 carrier 判定 —— operstate 在 DSA 口上是 lowerlayerdown，
+       与实际插线状态对不上（用户实测反馈）；down 时不读 speed（恒 -1）。 */
     {
-        static const char *be72_ports[] = {"lan1", "lan2", "lan3", "lan4",
-                                           "eth2.2", "eth1", "eth2.1", "pppoe-wan", NULL};
+        static const char *be72_lan_ports[] = {"lan1", "lan2", "lan3", "lan4", "eth1", NULL};
         struct json_object *port_array = json_object_new_array();
         int bi;
-        for (bi = 0; be72_ports[bi]; bi++) {
-            const char *nm = be72_ports[bi];
+        int has_pppoe = (access("/sys/class/net/pppoe-wan", F_OK) == 0);
+
+        for (bi = -1; bi < 5; bi++) {
+            const char *nm;
+            const char *role;
             char ppath[160];
-            struct json_object *po = json_object_new_object();
+            struct json_object *po;
             FILE *pf;
             int up = 0, speed = 0;
-            const char *role = (strstr(nm, "wan") != NULL) ? "wan" : "lan";
-            snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/operstate", nm);
+
+            if (bi < 0) {
+                nm = has_pppoe ? "pppoe-wan" : "eth2.1";
+                role = "wan";
+            } else {
+                nm = be72_lan_ports[bi];
+                role = "lan";
+            }
+            snprintf(ppath, sizeof(ppath), "/sys/class/net/%s", nm);
+            if (access(ppath, F_OK) != 0)
+                continue;
+
+            po = json_object_new_object();
+            snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/carrier", nm);
             pf = fopen(ppath, "r");
             if (pf) {
-                char st[32] = {0};
-                if (fgets(st, sizeof(st), pf) && strncmp(st, "up", 2) == 0)
-                    up = 1;
+                if (fscanf(pf, "%d", &up) != 1)
+                    up = 0;
                 fclose(pf);
             }
-            /* PPPoE 虚口的 operstate 常为 unknown：有收发包即视为在线 */
+            /* PPPoE 虚口没有 carrier 语义：有收包即视为在线 */
             if (!up && strcmp(nm, "pppoe-wan") == 0) {
                 snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/statistics/rx_bytes", nm);
                 pf = fopen(ppath, "r");
@@ -208,18 +224,20 @@ DS_INSERT = DS_ANCHOR + """
                     fclose(pf);
                 }
             }
-            snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/speed", nm);
-            pf = fopen(ppath, "r");
-            if (pf) {
-                if (fscanf(pf, "%d", &speed) != 1)
-                    speed = 0;
-                fclose(pf);
+            if (up) {
+                snprintf(ppath, sizeof(ppath), "/sys/class/net/%s/speed", nm);
+                pf = fopen(ppath, "r");
+                if (pf) {
+                    if (fscanf(pf, "%d", &speed) != 1 || speed < 0)
+                        speed = 0;
+                    fclose(pf);
+                }
             }
             json_object_object_add(po, "name", json_object_new_string(nm));
             json_object_object_add(po, "role", json_object_new_string(role));
             json_object_object_add(po, "up", json_object_new_int(up));
             json_object_object_add(po, "speed", json_object_new_int(speed));
-            json_object_object_add(po, "duplex", json_object_new_string("full"));
+            json_object_object_add(po, "duplex", json_object_new_string(up ? "full" : ""));
             json_object_array_add(port_array, po);
         }
         json_object_object_add(network_status, "port_status", port_array);

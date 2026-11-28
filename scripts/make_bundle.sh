@@ -63,6 +63,8 @@ mkdir -p "$ROOT/ipk"
 
 cp "${IPKS[@]}" "$ROOT/ipk/"
 cp "$(dirname "$0")/router-upgrade.sh" "$ROOT/install.sh"
+# 升级命令随包发布：安装器会把它装到 /usr/sbin/fwx-update（用户可直接 fwx update）
+cp "$(dirname "$0")/fwx-update.sh" "$ROOT/fwx-update.sh"
 chmod +x "$ROOT/install.sh"
 
 PKG_LIST=$(cd "$ROOT/ipk" && ls *.ipk | sed 's/\.ipk$//' | tr '\n' ',' | sed 's/,$//')

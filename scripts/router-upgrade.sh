@@ -138,6 +138,36 @@ fi
 # LuCI 页面是 Lua，改完要清编译缓存，否则界面还是旧的
 rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
 
+# ---------- 6a. 安装升级命令（fwx update / fwx-update） ----------
+if [ -f "$(dirname "$0")/fwx-update.sh" ]; then
+	cp "$(dirname "$0")/fwx-update.sh" /usr/sbin/fwx-update 2>/dev/null && \
+		chmod +x /usr/sbin/fwx-update 2>/dev/null && \
+		log "升级命令已安装：/usr/sbin/fwx-update"
+fi
+cat > /usr/sbin/fwx <<'FWXEOF'
+#!/bin/sh
+# be72: fwx 命令入口（fwx update = 升级组件包）
+case "$1" in
+	update)
+		shift
+		exec /usr/sbin/fwx-update "$@"
+		;;
+	version|-v|--version)
+		echo "组件版本：v$(cat /etc/fwx_pkg_version 2>/dev/null || echo 未知) (build $(cat /etc/fwx_pkg_build 2>/dev/null || echo 未知))"
+		;;
+	""|help|-h|--help)
+		echo "用法："
+		echo "  fwx update [--check] [--url <直链>] [--force]   # 升级组件包"
+		echo "  fwx version                                      # 查看当前组件版本"
+		;;
+	*)
+		echo "未知子命令：$1（试 fwx help）" >&2
+		exit 1
+		;;
+esac
+FWXEOF
+chmod +x /usr/sbin/fwx 2>/dev/null || true
+
 # ---------- 6b. 清理废弃组件（新版本不含、旧版本装过的包不会自动消失） ----------
 log "清理废弃组件"
 for pkg in luci-app-fwx-network luci-app-fwx-app-center; do
