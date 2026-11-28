@@ -152,10 +152,13 @@ echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
 #   提前执行时目标目录还不存在（build-49）。
 #   不做成独立包：build-45/46 实测独立包在 package metadata 里被静默跳过
 #   （tmp/.config-package.in 无其符号段 -> Kconfig 关成 n）。
-mkdir -p "$RJ/package/fcm/luci-app-fwx-system/luasrc/controller"
-mkdir -p "$RJ/package/fcm/luci-app-fwx-system/luasrc/view/fwx_accel"
-cp -f "$ROOT/patches/accel/fwx_accel.lua" "$RJ/package/fcm/luci-app-fwx-system/luasrc/controller/fwx_accel.lua"
-cp -f "$ROOT/patches/accel/accel.htm" "$RJ/package/fcm/luci-app-fwx-system/luasrc/view/fwx_accel/accel.htm"
+# 注意路径：APPS 循环把页面包拷到 $RJ/package/<name>（顶层），只有
+# libfwx_common/fwxd/fwx/主题 在 $RJ/package/fcm/ 下 —— 之前写成 fcm/ 前缀，
+# mkdir 出了一个没有 Makefile 的空目录，加速页永远进不了固件（build-55 实测）。
+mkdir -p "$RJ/package/luci-app-fwx-system/luasrc/controller"
+mkdir -p "$RJ/package/luci-app-fwx-system/luasrc/view/fwx_accel"
+cp -f "$ROOT/patches/accel/fwx_accel.lua" "$RJ/package/luci-app-fwx-system/luasrc/controller/fwx_accel.lua"
+cp -f "$ROOT/patches/accel/accel.htm" "$RJ/package/luci-app-fwx-system/luasrc/view/fwx_accel/accel.htm"
 echo "  加速页已并入 luci-app-fwx-system（游戏/视频/下载/办公加速）"
 
 # 2a-4. 加速页进普通模式菜单：主题 JS 的 basicMenus 按 9 个菜单名过滤，

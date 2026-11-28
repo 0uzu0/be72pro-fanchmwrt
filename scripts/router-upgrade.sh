@@ -138,6 +138,19 @@ fi
 # LuCI 页面是 Lua，改完要清编译缓存，否则界面还是旧的
 rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
 
+# ---------- 6b. 清理废弃组件（新版本不含、旧版本装过的包不会自动消失） ----------
+log "清理废弃组件"
+for pkg in luci-app-fwx-network luci-app-fwx-app-center; do
+	if opkg list-installed 2>/dev/null | grep -q "^$pkg "; then
+		log "  卸载 $pkg"
+		opkg remove --force-depends "$pkg" >/dev/null 2>&1 || true
+	fi
+done
+# 兜底：opkg 卸载不干净时直接删残留文件（页面与菜单）
+rm -f /usr/lib/lua/luci/controller/fwx_network.lua 2>/dev/null || true
+rm -rf /usr/lib/lua/luci/view/fwx_network 2>/dev/null || true
+rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
+
 # ---------- 7. 验证 ----------
 echo
 log "验证："
