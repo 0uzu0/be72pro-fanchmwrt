@@ -456,13 +456,23 @@ v3 还处理了两件容易漏的事：
 全局小时统计 22 个全零。修法：内核与 fwxd 两侧上限一起放宽到 16384，并给超长
 加 `printk_ratelimited` —— 以后同类问题能立刻在 dmesg 里看到。
 
-**DPI 与硬件 offload 互斥**：本树 `kmod-mediatek_hnat` 会写
-`/etc/modules.d/20-mediatek_hnat` 开机自动加载，长连接几包后卸载到 PPE 硬件，
-后续数据包不再经过 netfilter —— 实测 800MB 下载，fwx 只数到开头几十 KB，
-流量统计/App 时长/审计几乎不动，被 offload 的连接也绕过应用过滤与黑名单。
-构建时用 `files/` overlay 覆盖该文件，**默认不加载 mtkhnat**（模块仍在，
-`modprobe mtkhnat` 可恢复满速转发）。这是「统计准 ⇄ 转发快」的取舍，
-默认选准确——这台机器的核心就是 DPI 审计。
+**DPI 与硬件 offload 的运行时联动**：本树 `kmod-mediatek_hnat` 开机会把长连接
+卸载到 PPE 硬件，后续数据包不再经过 netfilter —— 实测 800MB 下载，fwx 只数到
+开头几百字节，流量统计/App 时长/审计几乎不动，被 offload 的连接同样绕过应用
+过滤与黑名单。这台机器上「硬件加速」和「DPI 看得见包」不可兼得，所以做成
+**运行时联动**（不卸载模块）：
+
+| 「上网审计 → 启用」 | HNAT hook_toggle | 效果 |
+|---|---|---|
+| 开（要统计/审计/过滤） | `0`（disabled） | 包全部进内核，统计准确，转发走 CPU |
+| 关（不在乎统计） | `1`（enabled） | 硬件加速，接近线速，DPI 失明 |
+
+由 `rule_manager` 每个周期对齐（`patch_kernel_extras.py` 的 `rm-hnat` 步骤），
+开关写 `/sys/kernel/debug/hnat/hook_toggle`（`echo 0/1` 可手动切）。
+默认状态跟随审计开关——这台机器的核心就是 DPI 审计，默认选准确。
+
+**实测**：`hook_toggle=0` 后，设备以 ~550KB/s 下载，`get_global_traffic_stats`
+的当前小时从 435MB 实时涨到 586MB，`/tmp/fwx` 开始产出统计文件。
 
 **构建期自检**（都排在编译之前，1 分钟内出结果）：
 

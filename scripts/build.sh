@@ -153,20 +153,14 @@ echo "  已放入 nft-fullcone（fw4 的 FullCone 表达式内核模块）"
 #   再在下面 make defconfig 之后做一次硬校验。不删 open-app-filter 源码 ——
 #   它同时提供用户态包，删源码有牵动依赖的风险。
 
-# 2a-2. 关闭 mtkhnat 硬件 offload（DPI 统计与过滤的前提）
-#   本树 kmod-mediatek_hnat 会往 /etc/modules.d/20-mediatek_hnat 写一行 "mtkhnat"，
-#   开机自动加载 → 长连接几包之后就卸载到 PPE 硬件，后续数据包不再经过 netfilter。
-#   后果（实测）：800MB 的下载，fwx 只能数到开头几十 KB，流量统计/App 时长/审计
-#   几乎不动；被 offload 的连接同样绕过应用过滤与黑名单。
-#   这里用 files/ overlay 覆盖那个 modules.d 文件（overlay 在包安装之后应用），
-#   模块仍然装着，只是不自动加载 —— 想恢复加速直接 `modprobe mtkhnat`。
-mkdir -p "$RJ/files/etc/modules.d"
-cat > "$RJ/files/etc/modules.d/20-mediatek_hnat" <<'HNATOFF'
-# 由 be72pro-fanchmwrt 覆盖：默认不加载 mtkhnat（硬件 PPE offload）。
-# 原因：offload 之后数据包绕过 netfilter，fwx 的 DPI 统计与过滤全部失效。
-# 需要满速转发时手动 `modprobe mtkhnat`（或删掉本文件重启）。
-HNATOFF
-echo "  [+] 覆盖 20-mediatek_hnat：默认不加载（保留模块，可 modprobe 恢复）"
+# 2a-2. mtkhnat 保留加载，钩子跟随「审计开关」联动（见 rule_manager.lua 补丁）
+#   实测：offload 开着时，大流量下载的流被 PPE 硬件接管，后续包绕过 netfilter，
+#   fwx 只能数到开头几百字节 → 流量统计/App 时长/审计"基本没变化"。
+#   用户不想卸载 mtkhnat，所以不改 modules.d；改为运行时写 debugfs 的
+#   /sys/kernel/debug/hnat/hook_toggle：
+#       审计开（record_enable=1）→ 0（disabled）＝包进内核，统计准、过滤生效
+#       审计关（record_enable=0）→ 1（enabled） ＝硬件加速，满速转发
+#   模块始终加载，不卸载、不改文件，由 rule_manager 每个周期对齐。
 
 # 2b. 给 fwxd 补 24.10.4 缺的两个接口（必须在下面的接口自检之前跑，
 #     否则自检会把「补丁才提供的 api」误报成缺口）：

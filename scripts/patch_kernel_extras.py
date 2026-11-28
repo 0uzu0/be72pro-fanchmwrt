@@ -382,6 +382,47 @@ def apply_netlink_limit(root):
     return 0
 
 
+# ---------------------------------------------------------------- rule_manager 联动 HNAT 钩子
+RM_REL = "package/fcm/fwxd/files/rule_manager.lua"
+RM_MARK = "hook_toggle"
+RM_ANCHOR = ('        log(string.format("Record enable set to %d successfully", enable))\n'
+             '        return true')
+RM_INSERT = ('        log(string.format("Record enable set to %d successfully", enable))\n'
+             '        -- be72pro: 审计开着时必须停掉 HNAT 钩子，否则 offload 吞包，\n'
+             '        -- 统计/审计/过滤全部失效（实测 800MB 下载只计入几百字节）。\n'
+             '        -- 模块本身保持加载，这里只切钩子；审计关掉则恢复硬件加速。\n'
+             '        local ht = io.open("/sys/kernel/debug/hnat/hook_toggle", "w")\n'
+             '        if ht then\n'
+             '            if enable == 1 then ht:write("0") else ht:write("1") end\n'
+             '            ht:close()\n'
+             '            log(string.format("HNAT hook_toggle -> %s (审计%s)",\n'
+             '                enable == 1 and "disabled" or "enabled",\n'
+             '                enable == 1 and "开" or "关"))\n'
+             '        else\n'
+             '            log("HNAT hook_toggle debugfs 不可写，跳过")\n'
+             '        end\n'
+             '        return true')
+
+
+def apply_rm_hnat(root):
+    path = os.path.join(root, RM_REL)
+    if not os.path.isfile(path):
+        print("  [!] 找不到 %s" % RM_REL)
+        return 2
+    src = read(path)
+    if RM_MARK in src:
+        print("  [skip] rule_manager 已含 HNAT 联动")
+        return 0
+    if RM_ANCHOR not in src:
+        print("  [!] rule_manager 锚点未命中，未联动 hook_toggle（统计会被 offload 吞掉）")
+        return 2
+    src = src.replace(RM_ANCHOR, RM_INSERT, 1)
+    write(path, src)
+    chk = read(path)
+    print("  [+] rule_manager：审计开关已联动 HNAT hook_toggle" if RM_MARK in chk else "  [!] 写入校验失败")
+    return 0 if RM_MARK in chk else 2
+
+
 def apply_init(root):
     """降级版（无 fwx.ko）下别让 rule_manager 空转。"""
     path = os.path.join(root, INIT_REL)
@@ -420,6 +461,7 @@ def main():
         rc |= apply_connlock(a.fwx)
         rc |= apply_init(a.fwx)
     rc |= apply_netlink_limit(a.fwx)
+    rc |= apply_rm_hnat(a.fwx)
     sys.exit(0 if rc == 0 else 2)
 
 
