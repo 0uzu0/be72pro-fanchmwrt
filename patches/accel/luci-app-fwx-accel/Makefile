@@ -4,7 +4,7 @@
 
 include $(TOPDIR)/rules.mk
 
-LUCI_TITLE:=LuCI support for fwx network acceleration (game/video/download/office)
+LUCI_TITLE:=LuCI support for fwx network acceleration
 LUCI_PKGARCH:=all
 LUCI_DEPENDS:=+luci-compat +luci-app-fwx-resources
 PKG_NAME:=luci-app-fwx-accel

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BE72 Pro · UI 统一改造合并清单</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#fff; --line:rgba(15,23,42,.09); --text:#0f172a;
+  --text2:#5b6675; --accent:#0a7cff; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.7;padding:32px 20px}
+.wrap{max-width:920px;margin:0 auto}
+h1{font-size:20px;margin-bottom:6px}
+.sub{color:var(--text2);font-size:12.5px;margin-bottom:24px}
+h2{font-size:16px;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h3{font-size:14px;margin:18px 0 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:14px}
+code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--accent);
+  background:rgba(10,124,255,.08);padding:1px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th{text-align:left;font-weight:600;color:var(--text2);padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;margin-right:4px}
+.pill.add{background:rgba(26,127,55,.1);color:var(--ok)}
+.pill.del{background:rgba(207,34,46,.1);color:var(--bad)}
+.pill.mod{background:rgba(154,103,0,.1);color:var(--warn)}
+.pill.keep{background:rgba(10,124,255,.1);color:var(--accent)}
+ul{margin:6px 0 6px 20px}
+li{margin:3px 0}
+.note{font-size:12.5px;color:var(--text2);margin-top:8px}
+.warn{color:var(--bad);font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>BE72 Pro · UI 统一改造合并清单</h1>
+<div class="sub">目标：彻底取消简单/高级双模式，全系统只保留一套 UI。生成于实施前，作为改动与验收依据。</div>
+
+<h2>一、现状：双模式的完整机制（vendor 主题）</h2>
+<div class="card">
+<p>模式分流全部在主题层，共四处：</p>
+<ul>
+<li><code>menu-fanchmwrt.js · getMenuCategory()</code>：把顶级菜单分为 <code>menu-item-basic</code>（9 个 fwx 页面）/ <code>menu-item-advanced</code>（其余全部，含 LuCI 原生页）。</li>
+<li><code>cascade.css</code>：<code>.menu-item-basic{display:block}</code> / <code>.menu-item-advanced{display:none}</code> —— 默认就是简单模式。</li>
+<li>顶栏 ⋮ 下拉（<code>mode-item</code>）写 <code>localStorage('luci-menu-category')</code>，页面加载后 <code>switchCategory()</code> 按存档切换两组菜单的显示。</li>
+<li><code>renderModeMenu()</code>：处理 <code>#modemenu</code>（本主题 header 无此元素，是死代码）。</li>
+</ul>
+<p class="note">另有四处遗留问题（双模式之外，但本次一并修）：<span class="warn">① 仓库版 menu-fanchmwrt.js 已去模式菜单，但 build.sh 从未把它拷进主题包 → 线上固件仍带模式切换</span>；② v1.8.0 移除 luci-app-fwx-network 后，<code>fwx_network</code> 顶级节点失去标题 → fwx 防火墙页没有导航入口；③ 网络加速页注册在 <code>admin/fwx/fwx_accel</code>（API 匿名节点下）→ 无菜单入口，只能手输 URL；④ 切换到高级模式时会出现 <code>fwx</code>、<code>fwx_network</code> 两个无标题空菜单。</p>
+</div>
+
+<h2>二、页面合并清单（顶级菜单 → 统一侧边栏）</h2>
+<div class="card">
+<p>同一功能只有一套页面实现：fwx 业务页继续用 fwx 页，LuCI 原生页继续用原生页，<b>不存在需要删除的重复页面</b>——重复的只是"入口分流"。合并动作 = 把两组入口合到一套侧边栏，并给三个失入口页面补入口。</p>
+<table>
+<tr><th>顺序</th><th>菜单节点</th><th>显示名</th><th>包含页面（子项）</th><th>改动</th></tr>
+<tr><td>1</td><td><code>fwx_dashboard</code></td><td>运行概览</td><td>仪表板</td><td><span class="pill keep">保留</span></td></tr>
+<tr><td>2</td><td><code>fwx_user</code></td><td>终端管理</td><td>终端列表 / 终端详情</td><td><span class="pill keep">保留</span></td></tr>
+<tr><td>3</td><td><code>fwx_parental_control</code></td><td>应用管控</td><td>应用过滤规则 / 过滤白名单 / 过滤高级设置；MAC 过滤规则 / MAC 白名单 / MAC 高级设置；上网黑名单</td><td><span class="pill keep">保留</span>（本就是同页多标签，无重复页）</td></tr>
+<tr><td>4</td><td><code>fwx_internet_record</code></td><td>上网审计</td><td>审计基础设置 / 审计白名单</td><td><span class="pill keep">保留</span></td></tr>
+<tr><td>5</td><td><code>fwx_monitor</code></td><td>数据监控</td><td>会话统计 / 流量统计 / 上下线记录</td><td><span class="pill keep">保留</span></td></tr>
+<tr><td>6</td><td><code>fwx_accel</code></td><td>网络加速</td><td>四类加速（游戏/视频/下载/办公）</td><td><span class="pill mod">迁移</span> 从 <code>admin/fwx/fwx_accel</code> 提升为顶级入口，旧地址留 alias 兼容</td></tr>
+<tr><td>7</td><td><code>fwx_network</code></td><td>防火墙</td><td>fwx 基础防火墙（FullCone + 基础策略）</td><td><span class="pill mod">修标题</span> 节点原无标题（luci-app-fwx-network 已移除），菜单层补名；不恢复 network 设置页</td></tr>
+<tr><td>8</td><td><code>network</code></td><td>LuCI 网络</td><td>接口 / DHCP/DNS / 诊断 / 无线(mtwifi-cfg) / EQoS / TurboAcc（按实际注册位置归入）</td><td><span class="pill add">并入</span> 原高级模式专属，现在常驻</td></tr>
+<tr><td>9</td><td><code>status</code></td><td>LuCI 状态</td><td>概览 / 路由表 / 系统日志 / 内核日志 / 进程 / 实时连接等</td><td><span class="pill add">并入</span></td></tr>
+<tr><td>10</td><td><code>fwx_advance</code></td><td>系统管理（fwx）</td><td>仪表板设置 / 特征库管理 / fwx 系统配置</td><td><span class="pill keep">保留</span></td></tr>
+<tr><td>11</td><td><code>system</code></td><td>LuCI 系统</td><td>系统 / 管理(密码) / 软件包 / 启动项 / 计划任务 / 挂载点 / ttyd 终端等</td><td><span class="pill add">并入</span></td></tr>
+<tr><td>12</td><td><code>firewall</code></td><td>LuCI 防火墙</td><td>区域 / 端口转发 / 通信规则 / 自定义规则</td><td><span class="pill add">并入</span></td></tr>
+<tr><td>13</td><td><code>logout</code></td><td>退出登录</td><td>—</td><td><span class="pill keep">保留</span>（末位）</td></tr>
+</table>
+<p class="note">兜底规则：清单外的任何顶级节点（未来装新 app）按注册顺序追加在 <code>logout</code> 之前，<b>保证不遗漏</b>；无标题的 API 匿名节点（<code>admin/fwx</code> 等）不进菜单。菜单排序在主题 JS 内做，不改动任何 vendor 控制器的 <code>entry()</code>。</p>
+</div>
+
+<h2>三、实施改动清单</h2>
+<div class="card">
+<table>
+<tr><th>#</th><th>文件</th><th>动作</th><th>说明</th></tr>
+<tr><td>1</td><td><code>patches/theme/menu-fanchmwrt.js</code></td><td><span class="pill mod">重写</span></td><td>删 <code>getMenuCategory / switchCategory / menu-item-* / localStorage</code> 与死代码 <code>renderModeMenu</code>；新增：菜单排序表、<code>fwx_network</code> 标题覆盖、跳过无标题节点、全部菜单常驻渲染（桌面侧栏 + 移动端）</td></tr>
+<tr><td>2</td><td><code>scripts/build.sh</code></td><td><span class="pill add">新增步骤</span></td><td>主题拷入后用仓库版 <code>menu-fanchmwrt.js</code> 覆盖 vendor 同名文件（此前缺失，是"线上仍带模式切换"的根因）</td></tr>
+<tr><td>3</td><td><code>scripts/style_bridge.py</code></td><td><span class="pill mod">扩展</span></td><td><code>--design</code> 追加设计层前，先幂等剥离 vendor cascade.css 里的模式 CSS（<code>.menu-item-basic/advanced</code>、<code>.mode-*</code>、<code>.top-more-*</code>、<code>#modemenu</code>）</td></tr>
+<tr><td>4</td><td><code>patches/accel/…/fwx_accel.lua</code></td><td><span class="pill mod">改注册</span></td><td>页面入口提升为 <code>admin/fwx_accel</code> 顶级节点；<code>admin/fwx/fwx_accel</code> 留 alias，旧 URL 不断</td></tr>
+<tr><td>5</td><td><code>patches/accel/…/po/zh_Hans/accel.po</code></td><td><span class="pill add">新增</span></td><td>加速页中文翻译（此前整页英文）</td></tr>
+<tr><td>6</td><td><code>VERSION</code></td><td><span class="pill mod">2.0.0 → 2.1.0</span></td><td>大版本功能变更，按版本规则</td></tr>
+</table>
+</div>
+
+<h2>四、不动的部分（兼容性红线）</h2>
+<div class="card">
+<ul>
+<li><b>后端零改动</b>：fwxd、fwx.ko、rule_manager.lua、DPI、审计、HNAT hook_toggle 联动全部不碰。</li>
+<li><b>ubus API / dispatch API 节点</b>（<code>admin/fwx/*</code>、<code>admin/*_api/*</code>）全部保留——只动"页面入口注册"，不动 API 注册。</li>
+<li><b>UCI 配置</b>（fwx、network、system、firewall…）不增不删不改名。</li>
+<li><b>已有用户数据</b>（审计记录、黑白名单、规则）不受影响。</li>
+<li><b>构建流程</b>：CI 只多一步文件覆盖（幂等），其余不变。</li>
+</ul>
+</div>
+
+<h2>五、验收对照</h2>
+<div class="card">
+<ul>
+<li>① 只剩一种 UI 模式 → 代码中不再有 basic/advanced、mode-item、luci-menu-category 任何一处引用（vendor CSS 中的死规则同时剥离）。</li>
+<li>② 无模式切换按钮 → ⋮ 下拉只剩「退出登录」。</li>
+<li>③ 无两套重复业务页面 → 清单二逐项核对。</li>
+<li>④ 所有功能有导航入口 → 重点验证防火墙页、网络加速页、LuCI 原生页。</li>
+<li>⑤ 高级配置可用 → MAC/应用过滤的「高级设置」标签、特征库、FullCone、EQoS、TurboAcc。</li>
+<li>⑥ 构建通过 → GitHub Actions 出镜像 + 整合包。</li>
+</ul>
+</div>
+</div>
+</body>
+</html>

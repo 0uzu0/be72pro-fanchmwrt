@@ -371,6 +371,8 @@ log "5b/8 配置诊断"
 	awk '/^config PACKAGE_luci-app-fwx-network$/{f=1} f&&/^(config|menu)/&&!/luci-app-fwx-network/{f=0} f' tmp/.config-package.in 2>/dev/null | head -14 | sed 's/^/    /' || true
 	echo "--- tmp/.config-package.in 里 luci-lib-jsonc 是否存在 ---"
 	grep -c "^config PACKAGE_luci-lib-jsonc$" tmp/.config-package.in 2>/dev/null | sed 's/^/    count=/' || true
+	echo "--- tmp/.config-package.in 里 luci-app-fwx-accel 的依赖段 ---"
+	awk '/^config PACKAGE_luci-app-fwx-accel$/{f=1} f&&/^(config|menu)/&&!/luci-app-fwx-accel/{f=0} f' tmp/.config-package.in 2>/dev/null | head -20 | sed 's/^/    /' || true
 } > "$WORKDIR/config-diag.log" 2>&1
 tail -30 "$WORKDIR/config-diag.log" | sed 's/^/  /'
 
